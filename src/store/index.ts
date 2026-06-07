@@ -138,9 +138,9 @@ export const useStore = create<NovaStore>()(
     columnWidths: { name: 400, modified: 144, type: 96, size: 80 },
 
     navigate: async (paneId, path) => {
-      const ARCHIVE_EXTS = new Set(["zip", "tar", "gz", "tgz"]);
-      const ext = path.split(".").pop()?.toLowerCase() ?? "";
-      const isArchive = ARCHIVE_EXTS.has(ext);
+      const { ARCHIVE_EXTS } = await import("../lib/utils");
+      const ext = path.split(/[\\/]/).pop()?.split(".").pop()?.toLowerCase() ?? "";
+      const isArchive = ARCHIVE_EXTS.has(ext) && !path.endsWith("\\") && !path.endsWith("/");
 
       set((s) => {
         const pane = s.panes[paneId];
@@ -164,11 +164,53 @@ export const useStore = create<NovaStore>()(
         let entries: FileEntry[] = [];
 
         if (isArchive) {
-          // handled by ArchiveView
-          set((s) => {
-            const p = s.panes[paneId];
-            if (p) { p.loading = false; p.isArchive = true; p.archivePath = path; }
-          });
+          try {
+            const { archive } = await import("../lib/invoke");
+            const rawEntries = await archive.list(path);
+            // Show only top-level entries (no nested paths)
+            const seen = new Set<string>();
+            const entries: FileEntry[] = rawEntries
+              .filter((e: any) => {
+                const parts = e.path.replace(/\\/g, "/").split("/").filter(Boolean);
+                return parts.length <= 1;
+              })
+              .filter((e: any) => {
+                const key = e.path.replace(/\\/g, "/").replace(/\/$/, "");
+                if (seen.has(key)) return false;
+                seen.add(key);
+                return true;
+              })
+              .map((e: any): FileEntry => {
+                const namePart = e.name || e.path.replace(/\\/g, "/").split("/").filter(Boolean).pop() || e.path;
+                const extPart = e.isDir ? null : namePart.includes(".") ? namePart.split(".").pop()!.toLowerCase() : null;
+                return {
+                  name: namePart,
+                  path: `${path}::${e.path}`,
+                  isDir: e.isDir,
+                  isSymlink: false,
+                  isHidden: false,
+                  size: e.size ?? 0,
+                  modified: e.modified ?? null,
+                  created: null,
+                  extension: extPart,
+                  readonly: true,
+                  iconType: e.isDir ? "folder" : extPart ?? "file",
+                };
+              });
+            entries.sort((a, b) => {
+              if (a.isDir !== b.isDir) return a.isDir ? -1 : 1;
+              return a.name.toLowerCase().localeCompare(b.name.toLowerCase());
+            });
+            set((s) => {
+              const p = s.panes[paneId];
+              if (p) { p.loading = false; p.isArchive = true; p.archivePath = path; p.entries = entries; p.error = null; }
+            });
+          } catch (err: any) {
+            set((s) => {
+              const p = s.panes[paneId];
+              if (p) { p.loading = false; p.error = String(err); }
+            });
+          }
           return;
         }
 

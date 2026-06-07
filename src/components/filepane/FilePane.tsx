@@ -7,7 +7,7 @@ import { DetailsView } from "./DetailsView";
 import { GridView } from "./GridView";
 import { ContextMenu } from "./ContextMenu";
 import type { FileEntry, ContextMenuAction } from "../../lib/types";
-import { cn, ARCHIVE_EXTS } from "../../lib/utils";
+import { cn, ARCHIVE_EXTS, OPENER_EXTS, IMAGE_EXTS, TEXT_EXTS, VIDEO_EXTS, AUDIO_EXTS } from "../../lib/utils";
 
 interface Props { paneId: string; }
 interface CtxMenuState { x: number; y: number; entry: FileEntry }
@@ -24,6 +24,11 @@ export function FilePane({ paneId }: Props) {
   const [dropTarget, setDropTarget] = useState(false);
   const isActive = activePaneId === paneId;
   const containerRef = useRef<HTMLDivElement>(null);
+
+  // Clear filter bar whenever the folder changes
+  useEffect(() => {
+    setLocalSearch("");
+  }, [pane?.path]);
 
   // File watcher — auto-refresh on changes
   useEffect(() => {
@@ -46,11 +51,21 @@ export function FilePane({ paneId }: Props) {
   const handleOpen = useCallback(async (entry: FileEntry) => {
     if (entry.isDir) {
       navigate(paneId, entry.path);
-    } else if (ARCHIVE_EXTS.has(entry.extension?.toLowerCase() ?? "")) {
-      navigate(paneId, entry.path);
-    } else {
-      openQuickLook(entry.path);
+      return;
     }
+    const ext = entry.extension?.toLowerCase() ?? "";
+    // Archive: browse contents inside the app
+    if (ARCHIVE_EXTS.has(ext) && !entry.path.includes("::")) {
+      navigate(paneId, entry.path);
+      return;
+    }
+    // Previewable in QuickLook
+    if (IMAGE_EXTS.has(ext) || TEXT_EXTS.has(ext) || VIDEO_EXTS.has(ext) || AUDIO_EXTS.has(ext)) {
+      openQuickLook(entry.path);
+      return;
+    }
+    // Everything else (.exe, .lnk, .url, .docx, .pdf, etc.) → hand to Windows
+    try { await fs.openItem(entry.path); } catch {}
   }, [paneId, navigate, openQuickLook]);
 
   const handleContextMenu = useCallback((e: React.MouseEvent, entry: FileEntry) => {
@@ -224,9 +239,24 @@ export function FilePane({ paneId }: Props) {
       }}
       tabIndex={0}
     >
+      {/* Archive banner */}
+      {pane.isArchive && pane.archivePath && (
+        <div className="flex items-center gap-2 px-3 h-7 bg-[var(--accent-dim)] border-b border-[var(--accent)]/30 shrink-0">
+          <span className="text-[10px] text-[var(--accent)] font-medium truncate">
+            📦 {pane.archivePath.split(/[\\/]/).pop()} — read-only archive
+          </span>
+          <button
+            onClick={() => { const parts = pane.archivePath!.replace(/\\/g,"/").split("/"); parts.pop(); navigate(paneId, parts.join("\\") || pane.archivePath!); }}
+            className="text-[10px] text-[var(--accent)] hover:underline shrink-0 ml-auto"
+          >
+            Leave archive
+          </button>
+        </div>
+      )}
+
       {/* Local search / filter bar */}
       <div className="flex items-center h-8 px-2 border-b border-[var(--border)] gap-2 shrink-0">
-        <Search size={12} className="text-[var(--text-muted)] shrink-0" />
+        <Search size={12} className={localSearch ? "text-[var(--accent)]" : "text-[var(--text-muted)]"} />
         <input
           value={localSearch}
           onChange={(e) => setLocalSearch(e.target.value)}

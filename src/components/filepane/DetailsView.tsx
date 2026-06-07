@@ -3,7 +3,7 @@ import { useRef, useCallback, useState } from "react";
 import { ArrowUp, ArrowDown } from "lucide-react";
 import type { FileEntry, SortKey } from "../../lib/types";
 import { FileIcon } from "./FileIcon";
-import { formatSize, formatDate, cn } from "../../lib/utils";
+import { formatSize, formatDate, cn, getFileTypeLabel } from "../../lib/utils";
 import { useStore } from "../../store";
 
 interface Props {
@@ -191,7 +191,7 @@ export function DetailsView({ paneId, entries, onOpen, onContextMenu }: Props) {
                 {/* Type */}
                 <div style={{ width: columnWidths["type"] ?? 96 }}
                   className="px-2 text-xs text-[var(--text-muted)] truncate shrink-0">
-                  {entry.isDir ? "Folder" : (entry.extension?.toUpperCase() ?? "File")}
+                  {getFileTypeLabel(entry)}
                 </div>
 
                 {/* Size */}
