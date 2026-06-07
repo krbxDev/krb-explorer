@@ -1,11 +1,11 @@
 ﻿{
     "platforms":  {
                       "windows-x86_64":  {
-                                             "signature":  "Public signature:",
-                                             "url":  "https://github.com/krbxDev/nova-explorer/releases/download/v1.0.2/Nova.Explorer_1.0.2_x64-setup.exe"
+                                             "signature":  "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVRMkVJNWlYTjdvZlZlQ3BHMitIN0tGK2hPNW91SUJPV2pQNWpNaEhTUEFyVVVMeHRxcmhvZUY1TzFRWXlBSmN4Vk01cExjOGlHMGsvOCtpL25hV3ArYXRzMHNBdzVrK0FnPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzgwODY2MDEyCWZpbGU6Tm92YSBFeHBsb3Jlcl8xLjAuM194NjQtc2V0dXAuZXhlCnc4NWllVWVvWjhIcDA3YlVjck56dW10UmZvSU0rbDdPeG9GcEticklXTklqTmtOdXdtT3g0aEhDVzltbW9hSWQ5YnJnZUsxQkt5dklnYXVDeDkyNkRBPT0K",
+                                             "url":  "https://github.com/krbxDev/nova-explorer/releases/download/v1.0.3/Nova.Explorer_1.0.3_x64-setup.exe"
                                          }
                   },
-    "pub_date":  "2026-06-07T21:38:44Z",
-    "version":  "1.0.2",
-    "notes":  "- Fixed sidebar Quick Access folders now point to your user folder (Desktop, Downloads, Documents, etc.)\n- Fixed update checker endpoint\n- Silent update check no longer shows error dialog when offline"
+    "pub_date":  "2026-06-07T21:01:29Z",
+    "version":  "1.0.3",
+    "notes":  "Native Windows shell icons - file and folder icons now match File Explorer exactly."
 }

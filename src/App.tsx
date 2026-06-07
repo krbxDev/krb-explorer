@@ -90,7 +90,7 @@ export function App() {
       <UpdateChecker silent />
 
       {/* Manual check triggered from menu/titlebar */}
-      {updateOpen && <UpdateChecker onClose={() => setUpdateOpen(false)} />}
+      {updateOpen && <UpdateChecker key={Date.now()} onClose={() => setUpdateOpen(false)} autoCheck />}
     </div>
   );
 }

@@ -13,13 +13,13 @@ type State =
   | { phase: "up-to-date" };
 
 interface Props {
-  /** When true the checker runs silently — only shows UI if an update is found */
   silent?: boolean;
+  autoCheck?: boolean;
   onClose?: () => void;
 }
 
-export function UpdateChecker({ silent = false, onClose }: Props) {
-  const [state, setState] = useState<State>(silent ? { phase: "checking" } : { phase: "idle" });
+export function UpdateChecker({ silent = false, autoCheck = false, onClose }: Props) {
+  const [state, setState] = useState<State>({ phase: "idle" });
 
   const runCheck = useCallback(async () => {
     setState({ phase: "checking" });
@@ -31,8 +31,17 @@ export function UpdateChecker({ silent = false, onClose }: Props) {
       }
       setState({ phase: "available", version: update.version, notes: update.body });
     } catch (err: any) {
-      setState({ phase: "error", message: String(err) });
+      if (silent) {
+        // Silent mode — network errors or missing manifest are expected (offline, no update)
+        setState({ phase: "idle" });
+      } else {
+        setState({ phase: "error", message: String(err) });
+      }
     }
+  }, [silent]);
+
+  useEffect(() => {
+    if (silent || autoCheck) runCheck();
   }, []);
 
   const install = useCallback(async () => {
@@ -58,15 +67,14 @@ export function UpdateChecker({ silent = false, onClose }: Props) {
     }
   }, []);
 
-  // Auto-check on mount when silent
-  useEffect(() => {
-    if (silent) runCheck();
-  }, []);
-
-  // In silent mode, render nothing until there's something to show
-  if (silent && (state.phase === "checking" || state.phase === "up-to-date" || state.phase === "idle")) {
-    return null;
+  // Silent mode — only render when there's something meaningful to show
+  if (silent) {
+    if (state.phase !== "available") return null;
+    // Fall through to render the update-available dialog
   }
+
+  // Manual mode without autoCheck — don't render until check has been triggered
+  if (!silent && !autoCheck && state.phase === "idle") return null;
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60">
@@ -87,18 +95,6 @@ export function UpdateChecker({ silent = false, onClose }: Props) {
 
         {/* Body */}
         <div className="px-5 py-5">
-          {state.phase === "idle" && (
-            <div className="text-center py-2">
-              <p className="text-sm text-[var(--text-secondary)] mb-4">
-                Check for the latest version of Nova Explorer.
-              </p>
-              <button onClick={runCheck}
-                className="px-4 py-2 bg-[var(--accent)] text-white text-sm rounded hover:bg-[var(--accent-hover)] transition-colors">
-                Check for Updates
-              </button>
-            </div>
-          )}
-
           {state.phase === "checking" && (
             <div className="flex items-center justify-center gap-3 py-4 text-[var(--text-secondary)]">
               <RefreshCw size={16} className="animate-spin text-[var(--accent)]" />
@@ -111,6 +107,12 @@ export function UpdateChecker({ silent = false, onClose }: Props) {
               <CheckCircle size={32} className="text-[var(--success)] mx-auto mb-3" />
               <p className="text-sm font-medium text-[var(--text-primary)]">You're up to date!</p>
               <p className="text-xs text-[var(--text-muted)] mt-1">Nova Explorer is running the latest version.</p>
+              {onClose && (
+                <button onClick={onClose}
+                  className="mt-4 px-4 py-1.5 text-xs border border-[var(--border)] rounded hover:bg-[var(--bg-hover)] text-[var(--text-secondary)] transition-colors">
+                  Close
+                </button>
+              )}
             </div>
           )}
 
@@ -183,12 +185,20 @@ export function UpdateChecker({ silent = false, onClose }: Props) {
 
           {state.phase === "error" && (
             <div className="text-center py-2">
-              <p className="text-sm text-[var(--danger)] mb-2">Update check failed</p>
-              <p className="text-xs text-[var(--text-muted)] mb-4">{state.message}</p>
-              <button onClick={runCheck}
-                className="px-3 py-1.5 text-xs border border-[var(--border)] rounded hover:bg-[var(--bg-hover)] text-[var(--text-secondary)] transition-colors">
-                Try Again
-              </button>
+              <p className="text-sm font-medium text-[var(--text-primary)] mb-1">Update check failed</p>
+              <p className="text-xs text-[var(--text-muted)] mb-4 px-2">{state.message}</p>
+              <div className="flex gap-2 justify-center">
+                {onClose && (
+                  <button onClick={onClose}
+                    className="px-3 py-1.5 text-xs border border-[var(--border)] rounded hover:bg-[var(--bg-hover)] text-[var(--text-secondary)] transition-colors">
+                    Close
+                  </button>
+                )}
+                <button onClick={runCheck}
+                  className="px-3 py-1.5 text-xs bg-[var(--accent)] text-white rounded hover:bg-[var(--accent-hover)] transition-colors">
+                  Try Again
+                </button>
+              </div>
             </div>
           )}
         </div>

@@ -1,6 +1,6 @@
 {
   "productName": "Nova Explorer",
-  "version": "1.0.2",
+  "version": "1.0.3",
   "identifier": "com.nova-explorer.app",
   "build": {
     "beforeDevCommand": "npm run dev",
@@ -47,7 +47,7 @@
       "icons/icon.ico"
     ],
     "publisher": "Nova Explorer",
-    "copyright": "Copyright © 2025 Nova Explorer",
+    "copyright": "Copyright Â© 2025 Nova Explorer",
     "category": "Utility",
     "shortDescription": "A fast, modern Windows file manager",
     "longDescription": "Nova Explorer is a production-quality Windows file manager built with Tauri, featuring multi-tab browsing, split panes, instant search, file previews, git integration, archive browsing, bulk rename, and more.",
@@ -59,3 +59,4 @@
     }
   }
 }
+

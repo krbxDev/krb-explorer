@@ -369,7 +369,125 @@ pub async fn get_recycle_bin_items() -> Result<Vec<FileEntry>, String> { Ok(vec!
 pub async fn restore_from_recycle_bin(_path: String) -> Result<(), String> { Ok(()) }
 
 #[command]
-pub async fn get_icon_data(_path: String) -> Result<String, String> { Ok(String::new()) }
+pub async fn get_icon_data(path: String, is_dir: bool, size: Option<u32>) -> Result<String, String> {
+    let icon_size = size.unwrap_or(32);
+    tokio::task::spawn_blocking(move || shell_icon_base64(&path, is_dir, icon_size))
+        .await
+        .map_err(|e| e.to_string())?
+}
+
+fn shell_icon_base64(path: &str, is_dir: bool, size: u32) -> Result<String, String> {
+    use base64::engine::general_purpose::STANDARD;
+    use base64::Engine;
+    use windows::Win32::Foundation::HWND;
+    use windows::Win32::Graphics::Gdi::{
+        CreateCompatibleDC, CreateDIBSection, DeleteDC, DeleteObject, GetDC, ReleaseDC,
+        SelectObject, BITMAPINFO, BITMAPINFOHEADER, DIB_RGB_COLORS, HGDIOBJ,
+    };
+    use windows::Win32::Storage::FileSystem::{
+        FILE_ATTRIBUTE_DIRECTORY, FILE_ATTRIBUTE_NORMAL, FILE_FLAGS_AND_ATTRIBUTES,
+    };
+    use windows::Win32::UI::Shell::{
+        SHGetFileInfoW, SHFILEINFOW, SHGFI_ICON, SHGFI_LARGEICON, SHGFI_SMALLICON,
+        SHGFI_USEFILEATTRIBUTES,
+    };
+    use windows::Win32::UI::WindowsAndMessaging::{DestroyIcon, DrawIconEx, DI_NORMAL};
+
+    unsafe {
+        let wide: Vec<u16> = path.encode_utf16().chain(std::iter::once(0)).collect();
+        let mut sfi = std::mem::zeroed::<SHFILEINFOW>();
+
+        let size_flag = if size <= 24 { SHGFI_SMALLICON } else { SHGFI_LARGEICON };
+
+        let (file_attrs, flags) = if is_dir {
+            (FILE_FLAGS_AND_ATTRIBUTES(FILE_ATTRIBUTE_DIRECTORY.0), SHGFI_ICON | size_flag)
+        } else {
+            (FILE_FLAGS_AND_ATTRIBUTES(FILE_ATTRIBUTE_NORMAL.0), SHGFI_ICON | size_flag | SHGFI_USEFILEATTRIBUTES)
+        };
+
+        let result = SHGetFileInfoW(
+            windows::core::PCWSTR(wide.as_ptr()),
+            file_attrs,
+            Some(&mut sfi),
+            std::mem::size_of::<SHFILEINFOW>() as u32,
+            flags,
+        );
+
+        if result == 0 || sfi.hIcon.is_invalid() {
+            return Err(format!("SHGetFileInfo failed for: {path}"));
+        }
+
+        let s = size as i32;
+        let null_hwnd = HWND(std::ptr::null_mut());
+        let hdc_screen = GetDC(null_hwnd);
+        if hdc_screen.is_invalid() {
+            let _ = DestroyIcon(sfi.hIcon);
+            return Err("GetDC failed".to_string());
+        }
+
+        let hdc_mem = CreateCompatibleDC(hdc_screen);
+        if hdc_mem.is_invalid() {
+            ReleaseDC(null_hwnd, hdc_screen);
+            let _ = DestroyIcon(sfi.hIcon);
+            return Err("CreateCompatibleDC failed".to_string());
+        }
+
+        let bmi = BITMAPINFO {
+            bmiHeader: BITMAPINFOHEADER {
+                biSize: std::mem::size_of::<BITMAPINFOHEADER>() as u32,
+                biWidth: s,
+                biHeight: -s,
+                biPlanes: 1,
+                biBitCount: 32,
+                biCompression: 0,
+                biSizeImage: 0,
+                biXPelsPerMeter: 0,
+                biYPelsPerMeter: 0,
+                biClrUsed: 0,
+                biClrImportant: 0,
+            },
+            bmiColors: [Default::default()],
+        };
+
+        let mut pvbits: *mut std::ffi::c_void = std::ptr::null_mut();
+        let hdib = match CreateDIBSection(hdc_mem, &bmi, DIB_RGB_COLORS, &mut pvbits, None, 0) {
+            Ok(h) if !h.is_invalid() => h,
+            _ => {
+                let _ = DeleteDC(hdc_mem);
+                ReleaseDC(null_hwnd, hdc_screen);
+                let _ = DestroyIcon(sfi.hIcon);
+                return Err("CreateDIBSection failed".to_string());
+            }
+        };
+
+        let old_obj = SelectObject(hdc_mem, HGDIOBJ(hdib.0));
+        let _ = DrawIconEx(hdc_mem, 0, 0, sfi.hIcon, s, s, 0, None, DI_NORMAL);
+
+        let pixel_count = (size * size * 4) as usize;
+        let pixels = std::slice::from_raw_parts(pvbits as *const u8, pixel_count);
+        let mut buf = pixels.to_vec();
+
+        SelectObject(hdc_mem, old_obj);
+        let _ = DeleteObject(HGDIOBJ(hdib.0));
+        DeleteDC(hdc_mem);
+        ReleaseDC(null_hwnd, hdc_screen);
+        let _ = DestroyIcon(sfi.hIcon);
+
+        // Windows DIBs are BGRA — swap to RGBA for PNG encoding
+        for chunk in buf.chunks_exact_mut(4) {
+            chunk.swap(0, 2);
+        }
+
+        let img = image::RgbaImage::from_raw(size, size, buf)
+            .ok_or_else(|| "Failed to construct RGBA image from icon data".to_string())?;
+
+        let mut png = Vec::new();
+        img.write_to(&mut std::io::Cursor::new(&mut png), image::ImageFormat::Png)
+            .map_err(|e| e.to_string())?;
+
+        Ok(STANDARD.encode(&png))
+    }
+}
 
 #[command]
 pub async fn get_thumbnail(path: String, size: u32) -> Result<String, String> {

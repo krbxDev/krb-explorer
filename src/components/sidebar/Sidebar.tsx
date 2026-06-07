@@ -1,8 +1,9 @@
 import {
   HardDrive, Star, Folder, Home, Download, Music, ImageIcon, Film,
-  ChevronDown, ChevronRight, Clock, Search as SearchIcon, Bookmark
+  ChevronDown, ChevronRight, Clock, Bookmark
 } from "lucide-react";
 import { useState, useEffect } from "react";
+import { homeDir, desktopDir, downloadDir, documentDir, pictureDir, audioDir, videoDir } from "@tauri-apps/api/path";
 import { useStore } from "../../store";
 import { db } from "../../lib/invoke";
 import { cn, formatSize } from "../../lib/utils";
@@ -75,6 +76,30 @@ export function Sidebar() {
   const pane = panes[activePaneId];
   const activePath = pane?.path ?? "";
   const [recentFiles, setRecentFiles] = useState<HistoryEntry[]>([]);
+  const [quickAccessItems, setQuickAccessItems] = useState<SideItem[]>([]);
+
+  // Resolve real user dirs from OS (Desktop, Downloads, etc. → C:\Users\kiero\...)
+  useEffect(() => {
+    Promise.all([
+      homeDir(),
+      desktopDir(),
+      downloadDir(),
+      documentDir(),
+      pictureDir(),
+      audioDir(),
+      videoDir(),
+    ]).then(([home, desktop, downloads, documents, pictures, music, videos]) => {
+      setQuickAccessItems([
+        { label: "Home", path: home.replace(/[\\/]$/, ""), icon: <Home size={13} /> },
+        { label: "Desktop", path: desktop.replace(/[\\/]$/, ""), icon: <Home size={13} /> },
+        { label: "Downloads", path: downloads.replace(/[\\/]$/, ""), icon: <Download size={13} /> },
+        { label: "Documents", path: documents.replace(/[\\/]$/, ""), icon: <Folder size={13} /> },
+        { label: "Pictures", path: pictures.replace(/[\\/]$/, ""), icon: <ImageIcon size={13} /> },
+        { label: "Music", path: music.replace(/[\\/]$/, ""), icon: <Music size={13} /> },
+        { label: "Videos", path: videos.replace(/[\\/]$/, ""), icon: <Film size={13} /> },
+      ]);
+    }).catch(() => {});
+  }, []);
 
   useEffect(() => {
     db.getHistory(15, true).then(setRecentFiles).catch(() => {});
@@ -88,16 +113,6 @@ export function Sidebar() {
       navigate(activePaneId, item.path);
     }
   };
-
-  const quickAccessItems: SideItem[] = [
-    { label: "Home", path: "C:\\Users", icon: <Home size={13} /> },
-    { label: "Desktop", path: `C:\\Users\\Public\\Desktop`, icon: <Home size={13} /> },
-    { label: "Downloads", path: `C:\\Users\\Public\\Downloads`, icon: <Download size={13} /> },
-    { label: "Documents", path: `C:\\Users\\Public\\Documents`, icon: <Folder size={13} /> },
-    { label: "Pictures", path: `C:\\Users\\Public\\Pictures`, icon: <ImageIcon size={13} /> },
-    { label: "Music", path: `C:\\Users\\Public\\Music`, icon: <Music size={13} /> },
-    { label: "Videos", path: `C:\\Users\\Public\\Videos`, icon: <Film size={13} /> },
-  ];
 
   const favoriteItems: SideItem[] = favorites
     .filter((f) => !f.isSearch)
