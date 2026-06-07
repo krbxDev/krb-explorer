@@ -1,0 +1,57 @@
+[package]
+name = "nova-explorer"
+version = "0.1.0"
+description = "Nova Explorer - A modern Windows file manager"
+authors = []
+edition = "2021"
+
+[lib]
+name = "nova_explorer_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[[bin]]
+name = "nova-explorer"
+path = "src/main.rs"
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+tauri = { version = "2", features = ["tray-icon"] }
+tauri-plugin-shell = "2"
+tauri-plugin-dialog = "2"
+tauri-plugin-fs = "2"
+tauri-plugin-os = "2"
+tauri-plugin-process = "2"
+tauri-plugin-updater = "2"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+tokio = { version = "1", features = ["full"] }
+walkdir = "2"
+notify = "7"
+rusqlite = { version = "0.32", features = ["bundled"] }
+fuzzy-matcher = "0.3"
+chrono = { version = "0.4", features = ["serde"] }
+winapi = { version = "0.3", features = ["shellapi", "winuser", "combaseapi", "objbase", "shlobj", "winerror", "minwindef", "processthreadsapi", "fileapi", "winbase", "winnt"] }
+windows = { version = "0.58", features = ["Win32_UI_Shell", "Win32_Storage_FileSystem", "Win32_System_Com", "Win32_Foundation"] }
+log = "0.4"
+env_logger = "0.11"
+anyhow = "1"
+thiserror = "2"
+rayon = "1"
+dirs = "5"
+open = "5"
+sha2 = "0.10"
+base64 = "0.22"
+zip = "2"
+tar = "0.4"
+flate2 = "1"
+regex = "1"
+image = { version = "0.25", default-features = false, features = ["jpeg", "png", "gif", "bmp", "webp", "ico"] }
+
+[profile.release]
+opt-level = 3
+lto = true
+codegen-units = 1
+panic = "abort"
+strip = true
