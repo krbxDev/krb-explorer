@@ -106,6 +106,16 @@ export function FilePane({ paneId, showNavBar }: Props) {
     setNewFolderName(null);
   }, [newFolderName, pane, paneId, refresh, setSelection, pushUndo]);
 
+  // Listen for nova:refresh (triggered by sidebar "New Text Document" etc.)
+  useEffect(() => {
+    const handler = (e: Event) => {
+      const ce = e as CustomEvent<{ paneId?: string }>;
+      if (!ce.detail?.paneId || ce.detail.paneId === paneId) refresh(paneId);
+    };
+    window.addEventListener("nova:refresh", handler);
+    return () => window.removeEventListener("nova:refresh", handler);
+  }, [paneId, refresh]);
+
   // Listen for nova:newfolder (placed after startNewFolder is declared)
   useEffect(() => {
     const handler = (e: Event) => {

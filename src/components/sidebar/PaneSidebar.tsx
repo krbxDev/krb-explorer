@@ -109,50 +109,77 @@ export function PaneSidebar({ paneId, collapsed, onToggle }: Props) {
 
   const buildActions = (item: SideItem, type: CtxState["type"]): ContextMenuAction[] => {
     const isFav = favorites.some((f) => f.path === item.path && !f.isSearch);
+    const isDriveRoot = /^[A-Za-z]:[/\\]?$/.test(item.path);
+
+    const newTextFile = async () => {
+      navigate(paneId, item.path);
+      await new Promise((r) => setTimeout(r, 120));
+      const base = item.path.replace(/[\\/]+$/, "");
+      let name = "New Text Document.txt";
+      let i = 1;
+      while (true) {
+        try { await fs.getFileInfo(base + "\\" + name); name = `New Text Document (${i++}).txt`; } catch { break; }
+      }
+      await fs.createFile(base + "\\" + name).catch(() => {});
+      window.dispatchEvent(new CustomEvent("nova:refresh", { detail: { paneId } }));
+    };
+
     const actions: ContextMenuAction[] = [
-      { id: "open",       label: "Open",              action: () => navigate(paneId, item.path) },
-      { id: "new-tab",    label: "Open in new tab",   action: () => openTab(item.path) },
+      { id: "open",       label: "Open",               action: () => navigate(paneId, item.path) },
+      { id: "new-tab",    label: "Open in new tab",    action: () => openTab(item.path) },
       { id: "new-window", label: "Open in new window", action: () => openInNewWindow(item.path) },
       { id: "sep1",       label: "", separator: true, action: () => {} },
-      { id: "copy-path",  label: "Copy path",         action: () => copyPath(item.path) },
     ];
 
-    if (type === "folder") {
-      actions.push({ id: "sep2", label: "", separator: true, action: () => {} });
+    // Pin to Quick access
+    if (type !== "favorite") {
       if (isFav) {
-        actions.push({ id: "unfav", label: "Remove from Favorites", danger: true, action: () => removeFavorite(item.path) });
+        actions.push({ id: "unpin-quick", label: "Unpin from Quick access", action: () => removeFavorite(item.path), danger: true });
       } else {
-        actions.push({ id: "fav", label: "Add to Favorites", action: () => addFavorite(item.path, item.label) });
+        actions.push({ id: "pin-quick", label: "Pin to Quick access", action: () => addFavorite(item.path, item.label) });
       }
+    }
+
+    // Give access to
+    actions.push({ id: "give-access",   label: "Give access to",            action: () => fs.openShareDialog(item.path).catch(() => {}) });
+    // Restore previous versions
+    actions.push({ id: "prev-versions", label: "Restore previous versions", action: () => fs.showPreviousVersions(item.path).catch(() => {}) });
+    // Scan with Defender
+    actions.push({ id: "scan-virus",    label: "Scan with Windows Defender", action: () => fs.scanWithDefender([item.path]).catch(() => {}) });
+    // Pin to Start
+    actions.push({ id: "pin-start",     label: "Pin to Start",              action: () => fs.pinToStart(item.path).catch(() => {}) });
+
+    // Format (drives only)
+    if (isDriveRoot) {
+      actions.push({ id: "format-drive", label: "Format…", action: () => fs.formatDrive(item.path).catch(() => {}) });
     }
 
     if (type === "favorite") {
       actions.push({ id: "sep2", label: "", separator: true, action: () => {} });
       actions.push({ id: "rename-fav", label: "Rename", action: () => {
         const newName = window.prompt("Rename favorite:", item.label);
-        if (newName && newName.trim() && newName.trim() !== item.label) {
-          renameFavorite(item.path, newName.trim());
-        }
+        if (newName && newName.trim() && newName.trim() !== item.label) renameFavorite(item.path, newName.trim());
       }});
       actions.push({ id: "unfav", label: "Remove from Favorites", danger: true, action: () => removeFavorite(item.path) });
     }
 
-    if (type !== "drive") {
-      actions.push({ id: "sep-newfolder", label: "", separator: true, action: () => {} });
-      actions.push({ id: "newfolder", label: "New Folder here", action: () => {
-        navigate(paneId, item.path);
-        setTimeout(() => window.dispatchEvent(new CustomEvent("nova:newfolder", { detail: { paneId } })), 100);
-      }});
-    }
-
     actions.push({ id: "sep3", label: "", separator: true, action: () => {} });
-    actions.push({ id: "terminal", label: "Open in Terminal", action: () => fs.openTerminalAt(item.path).catch(() => {}) });
-    actions.push({ id: "properties", label: "Properties", action: () => openProperties(item.path) });
+
+    // New submenu
+    actions.push({ id: "newfolder", label: "New → Folder", action: () => {
+      navigate(paneId, item.path);
+      setTimeout(() => window.dispatchEvent(new CustomEvent("nova:newfolder", { detail: { paneId } })), 120);
+    }});
+    actions.push({ id: "new-text", label: "New → Text Document", action: newTextFile });
+
+    actions.push({ id: "sep4", label: "", separator: true, action: () => {} });
+    actions.push({ id: "copy-path",  label: "Copy path",       action: () => copyPath(item.path) });
+    actions.push({ id: "terminal",   label: "Open in Terminal", action: () => fs.openTerminalAt(item.path).catch(() => {}) });
+    actions.push({ id: "properties", label: "Properties",       action: () => openProperties(item.path) });
 
     if (type === "drive" && item.isRemovable) {
-      actions.push({ id: "sep4", label: "", separator: true, action: () => {} });
-      actions.push({
-        id: "eject", label: "Eject", danger: true,
+      actions.push({ id: "sep5", label: "", separator: true, action: () => {} });
+      actions.push({ id: "eject", label: "Eject", danger: true,
         action: () => fs.ejectDrive(item.path).then(() => useStore.getState().loadDrives()).catch(() => {}),
       });
     }
