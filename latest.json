@@ -1,11 +1,11 @@
 {
-  "version": "1.0.32",
-  "notes": "v1.0.31 - Windows Explorer features: Home/This PC page, Recycle Bin browser, expandable folder tree, cut visual feedback, icon size slider, column chooser, file grouping, attributes column, folder sizes, Send To submenu, copy file hash (MD5/SHA1/SHA256), always-on-top, network drive dialog, duplicate file finder",
-  "pub_date": "2026-06-08T22:35:29Z",
+  "version": "1.0.33",
+  "notes": "v2 advanced features: Miller columns, File Vault (AES-256), AI assistant, FTP/SFTP/S3 browser, indexed search (FTS5), copy queue, workspaces, activity log, permissions viewer, large files finder, file timeline, folder color coding, WSL integration, secure delete, compact mode, cloud sync detection and more",
+  "pub_date": "2026-06-08T23:03:35Z",
   "platforms": {
     "windows-x86_64": {
-      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVRMkVJNWlYTjdvZmZNOUkzbGdsb05lcUxUem5ncC9BUlY5WkcwWDQ5dDI4VVlSbm80VUFRSDdTdFFFWXNHeWoyRHd5a0dtNm1KQUkrYkYvc2o3ZHRJRkFsYSthcyt3TUFFPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzgwOTU4MTI5CWZpbGU6S1JCIEV4cGxvcmVyXzEuMC4zMl94NjQtc2V0dXAuZXhlCkp2RDBiVkQ3RVl4YU15SE5DV3JzZm1sQy9vYnNPQlZNMlQxWVRCNkNHMGM4T2lWYmRUaUh4YVRRQ0RSS1cycUV3NUoyeGErQ2hhUlR0SXlpVzRkQkJ3PT0K",
-      "url": "https://github.com/krbxDev/krb-explorer/releases/download/v1.0.32/KRB.Explorer_1.0.32_x64-setup.exe"
+      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVRMkVJNWlYTjdvZmV3UE5RQjlXNkdaOGYxQXdoemN3cG1VUlhwVkM1bWNQZGo2RjdKUjFaWC9aN3hlcGxzM0IwTXhyZTdiR3o3Ky95L3k3bHpHVlRVRTYrRE1PdUlPNndnPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzgwOTU5ODE1CWZpbGU6S1JCIEV4cGxvcmVyXzEuMC4zM194NjQtc2V0dXAuZXhlClZrclJpdnNqZ1RsSnRraitXSEgwelQwZHpJZHhzdkNVdS9ad1g1Q3JnWUNrRzVsSmFrZEpCWno4STc4Umh6enY1enBhdnZIQzg2VFcrWjdrMU44NkNnPT0K",
+      "url": "https://github.com/krbxDev/krb-explorer/releases/download/v1.0.33/KRB.Explorer_1.0.33_x64-setup.exe"
     }
   }
 }
