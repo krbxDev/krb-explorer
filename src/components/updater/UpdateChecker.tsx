@@ -31,8 +31,9 @@ export function UpdateChecker({ silent = false, autoCheck = false, onClose }: Pr
       }
       setState({ phase: "available", version: update.version, notes: update.body });
     } catch (err: any) {
+      // Always show the real error in manual mode so the user can see what went wrong.
+      // In silent (startup) mode, network errors are expected when offline — stay idle.
       if (silent) {
-        // Silent mode — network errors or missing manifest are expected (offline, no update)
         setState({ phase: "idle" });
       } else {
         setState({ phase: "error", message: String(err) });
