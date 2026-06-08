@@ -1,11 +1,11 @@
 {
-  "version": "1.0.23",
-  "notes": "v1.0.23 — Fix archive navigation + updater error visibility\n\n• Opening folders inside zip/tar archives now works correctly\n• Archive banner shows current subfolder path with Up button\n• Update checker now shows the actual error when a check fails (instead of silently saying 'up to date')",
-  "pub_date": "2026-06-09T04:00:00Z",
+  "version": "1.0.24",
+  "notes": "v1.0.24 — Right-click menus on sidebar panels\n\n• Right-click any Quick Access, Favorite, or Drive item to get a context menu\n• Actions: Open, Open in new tab, Copy path, Add/Remove from Favorites, Open in Terminal, Eject (removable drives)\n• Works in both the main sidebar and each split pane's sidebar panel",
+  "pub_date": "2026-06-09T05:00:00Z",
   "platforms": {
     "windows-x86_64": {
-      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVRMkVJNWlYTjdvZlFGVXgzN2RtV21WTzBCOG5HVHhnR2hVYTlGWXdCOFBXd242VW1YaG03ZVFScjA5dW1LYlcwenRWNkU5cDcybng0VUFic0pzMHBLUkdnNENQVGNmUmdvPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzgwOTMwMzkwCWZpbGU6S1JCIEV4cGxvcmVyXzEuMC4yM194NjQtc2V0dXAuZXhlCjM3VHgxWmhITXVrT2xETkJIcUNDbGU0aUxYSFJjRUNERUtSZlJ3VjhzTCtyYjFBK3lJY3Q2RmtDbnp4MHJyeXFObWJYRHo0YU5yV3oxaEI1bGNycERRPT0K",
-      "url": "https://github.com/krbxDev/krb-explorer/releases/download/v1.0.23/KRB.Explorer_1.0.23_x64-setup.exe"
+      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVRMkVJNWlYTjdvZmFDcFVQZ1NrMm5sblQ0Y2sxSlBTOTBNZWZpRWVmazMzeTcvOWllaUFweEdPenRueE9HdGQ2MlYyQWV4b2htRTFFMFZnWUI4VVl2M1pTUVNFQUoxcWc0PQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzgwOTMxMDIzCWZpbGU6S1JCIEV4cGxvcmVyXzEuMC4yNF94NjQtc2V0dXAuZXhlCkcxcUpYT1oyWjdJcGs0aFVLbHZlSjd3SnFsWE44MnFKYjNCRUc5UlJMcSthRXA0aU5zcS9pVUM4MlVuV2xxczNXcjZFYW1sQi94MzVNYnAyZWF1eER3PT0K",
+      "url": "https://github.com/krbxDev/krb-explorer/releases/download/v1.0.24/KRB.Explorer_1.0.24_x64-setup.exe"
     }
   }
 }
