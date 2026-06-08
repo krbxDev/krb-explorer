@@ -30,6 +30,8 @@ pub fn run() {
             let watcher_state = watcher::WatcherState::new();
             app.manage(std::sync::Mutex::new(watcher_state));
 
+            app.manage(commands::pty::PtyState::default());
+
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
@@ -89,6 +91,11 @@ pub fn run() {
             // Archive
             commands::archive::list_archive,
             commands::archive::extract_archive,
+            // PTY
+            commands::pty::pty_spawn,
+            commands::pty::pty_write,
+            commands::pty::pty_resize,
+            commands::pty::pty_kill,
         ])
         .run(tauri::generate_context!())
         .expect("error while running Nova Explorer");
