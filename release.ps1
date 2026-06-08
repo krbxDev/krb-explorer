@@ -48,7 +48,7 @@ if (-not $sig) { Write-Error "Could not extract signature"; exit 1 }
 # Update latest.json (build clean JSON manually to avoid ConvertTo-Json double-space bug)
 Write-Host "Updating latest.json..." -ForegroundColor Cyan
 $pubDate  = (Get-Date).ToUniversalTime().ToString("yyyy-MM-ddTHH:mm:ssZ")
-$notesEsc = $Notes -replace '\\', '\\' -replace '"', '\"'
+$notesEsc = $Notes -replace '\\', '\\' -replace '"', '\"' -replace "`r`n", '\n' -replace "`n", '\n' -replace "`r", '\n'
 $releaseUrl = "https://github.com/$REPO/releases/download/v$newVer/KRB.Explorer_${newVer}_x64-setup.exe"
 $json = @"
 {
