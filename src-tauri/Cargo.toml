@@ -32,7 +32,7 @@ notify = "7"
 rusqlite = { version = "0.32", features = ["bundled"] }
 fuzzy-matcher = "0.3"
 chrono = { version = "0.4", features = ["serde"] }
-winapi = { version = "0.3", features = ["shellapi", "winuser", "combaseapi", "objbase", "shlobj", "winerror", "minwindef", "processthreadsapi", "fileapi", "winbase", "winnt"] }
+winapi = { version = "0.3", features = ["shellapi", "winuser", "combaseapi", "objbase", "shlobj", "winerror", "minwindef", "processthreadsapi", "fileapi", "winbase", "winnt", "winreg", "ioapiset", "handleapi"] }
 windows = { version = "0.58", features = ["Win32_UI_Shell", "Win32_Storage_FileSystem", "Win32_System_Com", "Win32_Foundation", "Win32_Graphics_Gdi", "Win32_UI_WindowsAndMessaging"] }
 log = "0.4"
 env_logger = "0.11"

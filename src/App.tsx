@@ -13,6 +13,9 @@ import { DiskUsageModal } from "./components/diskusage/DiskUsageModal";
 import { CopyProgressBar } from "./components/progress/CopyProgressBar";
 import { TerminalPanel } from "./components/terminal/TerminalPanel";
 import { UpdateChecker } from "./components/updater/UpdateChecker";
+import { PropertiesDialog } from "./components/filepane/PropertiesDialog";
+import { ConflictDialog } from "./components/filepane/ConflictDialog";
+import { OpenWithDialog } from "./components/filepane/OpenWithDialog";
 import { useStore } from "./store";
 import { useKeyboard } from "./hooks/useKeyboard";
 
@@ -85,6 +88,11 @@ export function App() {
       <BulkRenameModal />
       <DiskUsageModal />
       <CopyProgressBar />
+
+      {/* Global dialogs */}
+      <PropertiesDialog />
+      <ConflictDialog />
+      <OpenWithDialog />
 
       {/* Silent startup check — only renders UI when update is available */}
       <UpdateChecker silent />

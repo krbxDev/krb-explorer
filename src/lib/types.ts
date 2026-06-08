@@ -11,6 +11,58 @@ export interface FileEntry {
   readonly: boolean;
   iconType: string;
   gitStatus?: string;
+  ntfsCompressed?: boolean;
+  ntfsEncrypted?: boolean;
+  isSystem?: boolean;
+}
+
+export interface ConflictInfo {
+  sourcePath: string;
+  destPath: string;
+  sourceName: string;
+  sourceSize: number;
+  sourceModified: string | null;
+  destSize: number;
+  destModified: string | null;
+}
+
+export type ConflictResolution = 'replace' | 'skip' | 'keepBoth';
+
+export interface FileProperties {
+  path: string;
+  name: string;
+  fileType: string;
+  location: string;
+  size: number;
+  sizeOnDisk: number;
+  created: string | null;
+  modified: string | null;
+  accessed: string | null;
+  isReadonly: boolean;
+  isHidden: boolean;
+  isSystem: boolean;
+  isArchiveAttr: boolean;
+  isCompressed: boolean;
+  isEncrypted: boolean;
+  isDir: boolean;
+  itemCount: number | null;
+}
+
+export interface OpenWithApp {
+  name: string;
+  exePath: string;
+  displayName: string;
+}
+
+export type OperationKind = 'copy' | 'move' | 'rename' | 'delete' | 'create';
+export interface OperationRecord {
+  id: string;
+  kind: OperationKind;
+  sources: string[];
+  dest?: string;
+  oldName?: string;
+  newName?: string;
+  timestamp: number;
 }
 
 export interface DriveInfo {

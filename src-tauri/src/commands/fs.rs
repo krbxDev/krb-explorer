@@ -596,6 +596,538 @@ pub async fn bulk_rename(
     .map_err(|e| e.to_string())?
 }
 
+// ─── Path autocomplete for address bar ─────────────────────────────────────
+
+#[command]
+pub async fn path_suggestions(partial: String) -> Result<Vec<String>, String> {
+    tokio::task::spawn_blocking(move || {
+        let p = Path::new(&partial);
+        let (search_dir, prefix) = if partial.ends_with('\\') || partial.ends_with('/') {
+            (p.to_owned(), String::new())
+        } else {
+            let parent = p.parent().unwrap_or(p).to_owned();
+            let stem = p.file_name()
+                .and_then(|n| n.to_str())
+                .unwrap_or("")
+                .to_lowercase();
+            (parent, stem)
+        };
+        let mut results = Vec::new();
+        if let Ok(rd) = std::fs::read_dir(&search_dir) {
+            for entry in rd.flatten().take(30) {
+                let ep = entry.path();
+                if !ep.is_dir() { continue; }
+                let name = entry.file_name().to_string_lossy().into_owned();
+                if prefix.is_empty() || name.to_lowercase().starts_with(&prefix) {
+                    results.push(ep.to_string_lossy().into_owned());
+                }
+            }
+        }
+        results.sort_by(|a, b| a.to_lowercase().cmp(&b.to_lowercase()));
+        Ok(results)
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+
+// ─── Conflict detection ──────────────────────────────────────────────────────
+
+#[derive(serde::Serialize, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct ConflictInfo {
+    pub source_path: String,
+    pub dest_path: String,
+    pub source_name: String,
+    pub source_size: u64,
+    pub source_modified: Option<String>,
+    pub dest_size: u64,
+    pub dest_modified: Option<String>,
+}
+
+#[command]
+pub async fn check_conflicts(sources: Vec<String>, dest_dir: String) -> Result<Vec<ConflictInfo>, String> {
+    tokio::task::spawn_blocking(move || {
+        use crate::fs::system_time_to_string;
+        let mut conflicts = Vec::new();
+        for src in &sources {
+            let src_path = Path::new(src);
+            let file_name = match src_path.file_name() {
+                Some(n) => n,
+                None => continue,
+            };
+            let dest = Path::new(&dest_dir).join(file_name);
+            if dest.exists() {
+                let src_meta = std::fs::metadata(src_path).map_err(|e| e.to_string())?;
+                let dest_meta = std::fs::metadata(&dest).map_err(|e| e.to_string())?;
+                conflicts.push(ConflictInfo {
+                    source_path: src.clone(),
+                    dest_path: dest.to_string_lossy().into_owned(),
+                    source_name: file_name.to_string_lossy().into_owned(),
+                    source_size: src_meta.len(),
+                    source_modified: src_meta.modified().ok().and_then(system_time_to_string),
+                    dest_size: dest_meta.len(),
+                    dest_modified: dest_meta.modified().ok().and_then(system_time_to_string),
+                });
+            }
+        }
+        Ok(conflicts)
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+
+// ─── Create ZIP archive ──────────────────────────────────────────────────────
+
+#[command]
+pub async fn create_zip(sources: Vec<String>, output_path: String) -> Result<(), String> {
+    tokio::task::spawn_blocking(move || {
+        use std::io::Write;
+        let file = std::fs::File::create(&output_path).map_err(|e| e.to_string())?;
+        let mut zip = zip::ZipWriter::new(file);
+        let options = zip::write::SimpleFileOptions::default()
+            .compression_method(zip::CompressionMethod::Deflated);
+        for src in &sources {
+            let src_path = Path::new(src);
+            if src_path.is_file() {
+                let name = src_path.file_name()
+                    .and_then(|n| n.to_str()).ok_or("Bad filename")?;
+                zip.start_file(name, options).map_err(|e| e.to_string())?;
+                let data = std::fs::read(src_path).map_err(|e| e.to_string())?;
+                zip.write_all(&data).map_err(|e| e.to_string())?;
+            } else if src_path.is_dir() {
+                let dir_name = src_path.file_name()
+                    .and_then(|n| n.to_str()).ok_or("Bad dir name")?;
+                add_dir_to_zip(&mut zip, src_path, dir_name, options)?;
+            }
+        }
+        zip.finish().map_err(|e| e.to_string())?;
+        Ok(())
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+
+fn add_dir_to_zip(
+    zip: &mut zip::ZipWriter<std::fs::File>,
+    dir: &Path,
+    prefix: &str,
+    options: zip::write::SimpleFileOptions,
+) -> Result<(), String> {
+    use std::io::Write;
+    zip.add_directory(format!("{}/", prefix), options).map_err(|e| e.to_string())?;
+    for entry in std::fs::read_dir(dir).map_err(|e| e.to_string())?.flatten() {
+        let p = entry.path();
+        let name = entry.file_name().to_string_lossy().into_owned();
+        let full_name = format!("{}/{}", prefix, name);
+        if p.is_file() {
+            zip.start_file(&full_name, options).map_err(|e| e.to_string())?;
+            let data = std::fs::read(&p).map_err(|e| e.to_string())?;
+            zip.write_all(&data).map_err(|e| e.to_string())?;
+        } else if p.is_dir() {
+            add_dir_to_zip(zip, &p, &full_name, options)?;
+        }
+    }
+    Ok(())
+}
+
+// ─── File properties (General tab) ──────────────────────────────────────────
+
+#[derive(serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct FileProperties {
+    pub path: String,
+    pub name: String,
+    pub file_type: String,
+    pub location: String,
+    pub size: u64,
+    pub size_on_disk: u64,
+    pub created: Option<String>,
+    pub modified: Option<String>,
+    pub accessed: Option<String>,
+    pub is_readonly: bool,
+    pub is_hidden: bool,
+    pub is_system: bool,
+    pub is_archive_attr: bool,
+    pub is_compressed: bool,
+    pub is_encrypted: bool,
+    pub is_dir: bool,
+    pub item_count: Option<u64>,
+}
+
+#[command]
+pub async fn get_file_properties(path: String) -> Result<FileProperties, String> {
+    tokio::task::spawn_blocking(move || {
+        use crate::fs::system_time_to_string;
+        let p = Path::new(&path);
+        let meta = std::fs::metadata(&path).map_err(|e| e.to_string())?;
+        let name = p.file_name().and_then(|n| n.to_str()).unwrap_or("").to_string();
+        let location = p.parent().and_then(|p| p.to_str()).unwrap_or("").to_string();
+        let is_dir = meta.is_dir();
+
+        #[cfg(windows)]
+        let (is_readonly, is_hidden, is_system, is_archive_attr, is_compressed, is_encrypted, size_on_disk) = {
+            use std::os::windows::fs::MetadataExt;
+            let attrs = meta.file_attributes();
+            let sod = if !is_dir { get_compressed_file_size(&path).unwrap_or(meta.len()) } else { 0 };
+            (attrs & 0x1 != 0, attrs & 0x2 != 0, attrs & 0x4 != 0, attrs & 0x20 != 0, attrs & 0x800 != 0, attrs & 0x4000 != 0, sod)
+        };
+        #[cfg(not(windows))]
+        let (is_readonly, is_hidden, is_system, is_archive_attr, is_compressed, is_encrypted, size_on_disk) =
+            (meta.permissions().readonly(), false, false, false, false, false, meta.len());
+
+        let file_type = if is_dir {
+            "File folder".to_string()
+        } else {
+            p.extension().and_then(|e| e.to_str())
+                .map(|e| format!("{} File", e.to_uppercase()))
+                .unwrap_or_else(|| "File".to_string())
+        };
+        let item_count = if is_dir {
+            std::fs::read_dir(&path).ok().map(|rd| rd.flatten().count() as u64)
+        } else { None };
+
+        Ok(FileProperties {
+            path: path.clone(), name, file_type, location,
+            size: meta.len(), size_on_disk,
+            created: meta.created().ok().and_then(system_time_to_string),
+            modified: meta.modified().ok().and_then(system_time_to_string),
+            accessed: meta.accessed().ok().and_then(system_time_to_string),
+            is_readonly, is_hidden, is_system, is_archive_attr, is_compressed, is_encrypted, is_dir, item_count,
+        })
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+
+#[cfg(windows)]
+fn get_compressed_file_size(path: &str) -> Option<u64> {
+    use std::ffi::OsStr;
+    use std::os::windows::ffi::OsStrExt;
+    let wide: Vec<u16> = OsStr::new(path).encode_wide().chain(std::iter::once(0)).collect();
+    let mut high: u32 = 0;
+    let low = unsafe { winapi::um::fileapi::GetCompressedFileSizeW(wide.as_ptr(), &mut high) };
+    if low == 0xFFFFFFFF { None } else { Some((high as u64) << 32 | low as u64) }
+}
+
+// ─── Run as Administrator ────────────────────────────────────────────────────
+
+#[command]
+pub async fn run_as_admin(path: String) -> Result<(), String> {
+    tokio::task::spawn_blocking(move || {
+        #[cfg(windows)]
+        {
+            use std::ffi::OsStr;
+            use std::os::windows::ffi::OsStrExt;
+            let path_wide: Vec<u16> = OsStr::new(&path).encode_wide().chain(std::iter::once(0)).collect();
+            let verb: Vec<u16> = "runas\0".encode_utf16().collect();
+            let result = unsafe {
+                winapi::um::shellapi::ShellExecuteW(
+                    std::ptr::null_mut(), verb.as_ptr(), path_wide.as_ptr(),
+                    std::ptr::null(), std::ptr::null(), winapi::um::winuser::SW_SHOWNORMAL,
+                )
+            };
+            if result as usize <= 32 { Err(format!("ShellExecuteW failed: {}", result as usize)) } else { Ok(()) }
+        }
+        #[cfg(not(windows))]
+        Err("Run as admin not supported on this platform".to_string())
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+
+// ─── Set desktop wallpaper ───────────────────────────────────────────────────
+
+#[command]
+pub async fn set_wallpaper(path: String) -> Result<(), String> {
+    tokio::task::spawn_blocking(move || {
+        #[cfg(windows)]
+        {
+            use std::ffi::OsStr;
+            use std::os::windows::ffi::OsStrExt;
+            let wide: Vec<u16> = OsStr::new(&path).encode_wide().chain(std::iter::once(0)).collect();
+            let result = unsafe {
+                winapi::um::winuser::SystemParametersInfoW(
+                    winapi::um::winuser::SPI_SETDESKWALLPAPER,
+                    0,
+                    wide.as_ptr() as *mut _,
+                    winapi::um::winuser::SPIF_UPDATEINIFILE | winapi::um::winuser::SPIF_SENDCHANGE,
+                )
+            };
+            if result == 0 { Err("SystemParametersInfoW failed".to_string()) } else { Ok(()) }
+        }
+        #[cfg(not(windows))]
+        Err("Set wallpaper not supported on this platform".to_string())
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+
+// ─── Print file ──────────────────────────────────────────────────────────────
+
+#[command]
+pub async fn print_file(path: String) -> Result<(), String> {
+    tokio::task::spawn_blocking(move || {
+        #[cfg(windows)]
+        {
+            use std::ffi::OsStr;
+            use std::os::windows::ffi::OsStrExt;
+            let path_wide: Vec<u16> = OsStr::new(&path).encode_wide().chain(std::iter::once(0)).collect();
+            let verb: Vec<u16> = "print\0".encode_utf16().collect();
+            let result = unsafe {
+                winapi::um::shellapi::ShellExecuteW(
+                    std::ptr::null_mut(), verb.as_ptr(), path_wide.as_ptr(),
+                    std::ptr::null(), std::ptr::null(), winapi::um::winuser::SW_SHOWNORMAL,
+                )
+            };
+            if result as usize <= 32 { Err(format!("Print failed: {}", result as usize)) } else { Ok(()) }
+        }
+        #[cfg(not(windows))]
+        Err("Print not supported on this platform".to_string())
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+
+// ─── Create .lnk shortcut (via PowerShell) ───────────────────────────────────
+
+#[command]
+pub async fn create_shortcut(target: String, shortcut_path: String) -> Result<(), String> {
+    tokio::task::spawn_blocking(move || {
+        #[cfg(windows)]
+        use std::os::windows::process::CommandExt;
+        let script = format!(
+            "$s=(New-Object -COM WScript.Shell).CreateShortcut('{}'); $s.TargetPath='{}'; $s.Save()",
+            shortcut_path.replace('\'', "''"),
+            target.replace('\'', "''")
+        );
+        let mut cmd = std::process::Command::new("powershell");
+        cmd.args(["-NoProfile", "-NonInteractive", "-Command", &script]);
+        #[cfg(windows)]
+        cmd.creation_flags(0x0800_0000);
+        let out = cmd.output().map_err(|e| e.to_string())?;
+        if !out.status.success() {
+            Err(String::from_utf8_lossy(&out.stderr).to_string())
+        } else {
+            Ok(())
+        }
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+
+// ─── Resolve .lnk shortcut target (via PowerShell) ───────────────────────────
+
+#[command]
+pub async fn resolve_shortcut(lnk_path: String) -> Result<String, String> {
+    tokio::task::spawn_blocking(move || {
+        #[cfg(windows)]
+        use std::os::windows::process::CommandExt;
+        let script = format!(
+            "(New-Object -COM WScript.Shell).CreateShortcut('{}').TargetPath",
+            lnk_path.replace('\'', "''")
+        );
+        let mut cmd = std::process::Command::new("powershell");
+        cmd.args(["-NoProfile", "-NonInteractive", "-Command", &script]);
+        #[cfg(windows)]
+        cmd.creation_flags(0x0800_0000);
+        let out = cmd.output().map_err(|e| e.to_string())?;
+        Ok(String::from_utf8_lossy(&out.stdout).trim().to_string())
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+
+// ─── Open With apps from registry ────────────────────────────────────────────
+
+#[derive(serde::Serialize, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct OpenWithApp {
+    pub name: String,
+    pub exe_path: String,
+    pub display_name: String,
+}
+
+#[command]
+pub async fn get_open_with_apps(ext: String) -> Result<Vec<OpenWithApp>, String> {
+    tokio::task::spawn_blocking(move || {
+        #[cfg(windows)]
+        {
+            get_open_with_apps_impl(&ext)
+        }
+        #[cfg(not(windows))]
+        Ok(vec![])
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+
+#[cfg(windows)]
+fn get_open_with_apps_impl(ext: &str) -> Result<Vec<OpenWithApp>, String> {
+    use std::ffi::{OsStr, OsString};
+    use std::os::windows::ffi::{OsStrExt, OsStringExt};
+
+    let ext_dot = if ext.starts_with('.') { ext.to_string() } else { format!(".{}", ext) };
+    let mut apps: Vec<OpenWithApp> = Vec::new();
+    let key_paths = [
+        format!("{}\\OpenWithList", ext_dot),
+        format!("{}\\OpenWithProgids", ext_dot),
+    ];
+
+    unsafe {
+        for key_path in &key_paths {
+            let key_wide: Vec<u16> = OsStr::new(key_path).encode_wide().chain(std::iter::once(0)).collect();
+            let mut hkey: winapi::shared::minwindef::HKEY = std::ptr::null_mut();
+            if winapi::um::winreg::RegOpenKeyExW(
+                winapi::um::winreg::HKEY_CLASSES_ROOT,
+                key_wide.as_ptr(), 0, winapi::um::winnt::KEY_READ, &mut hkey,
+            ) != 0 { continue; }
+
+            let mut i = 0u32;
+            loop {
+                let mut name_buf = vec![0u16; 260];
+                let mut name_len = 260u32;
+                if winapi::um::winreg::RegEnumKeyExW(
+                    hkey, i, name_buf.as_mut_ptr(), &mut name_len,
+                    std::ptr::null_mut(), std::ptr::null_mut(), std::ptr::null_mut(), std::ptr::null_mut(),
+                ) != 0 { break; }
+                let end = name_buf.iter().position(|&c| c == 0).unwrap_or(name_len as usize);
+                let app_name = OsString::from_wide(&name_buf[..end]).to_string_lossy().into_owned();
+                if let Some(exe_path) = lookup_app_exe_win(&app_name) {
+                    let display = get_app_friendly_name_win(&app_name).unwrap_or_else(|| app_name.clone());
+                    if !apps.iter().any(|a| a.exe_path == exe_path) {
+                        apps.push(OpenWithApp { name: app_name, display_name: display, exe_path });
+                    }
+                }
+                i += 1;
+            }
+            winapi::um::winreg::RegCloseKey(hkey);
+        }
+    }
+    Ok(apps)
+}
+
+#[cfg(windows)]
+fn lookup_app_exe_win(app_name: &str) -> Option<String> {
+    use std::ffi::{OsStr, OsString};
+    use std::os::windows::ffi::{OsStrExt, OsStringExt};
+    let key_path = format!("Applications\\{}\\shell\\open\\command", app_name);
+    unsafe {
+        let key_wide: Vec<u16> = OsStr::new(&key_path).encode_wide().chain(std::iter::once(0)).collect();
+        let mut hkey: winapi::shared::minwindef::HKEY = std::ptr::null_mut();
+        if winapi::um::winreg::RegOpenKeyExW(
+            winapi::um::winreg::HKEY_CLASSES_ROOT, key_wide.as_ptr(), 0, winapi::um::winnt::KEY_READ, &mut hkey,
+        ) != 0 { return None; }
+        let mut buf = vec![0u16; 512];
+        let mut buf_size = (512u32 * 2);
+        let empty: Vec<u16> = vec![0u16];
+        let ok = winapi::um::winreg::RegQueryValueExW(
+            hkey, empty.as_ptr(), std::ptr::null_mut(), std::ptr::null_mut(),
+            buf.as_mut_ptr() as *mut u8, &mut buf_size,
+        );
+        winapi::um::winreg::RegCloseKey(hkey);
+        if ok != 0 { return None; }
+        let end = buf.iter().position(|&c| c == 0).unwrap_or(buf.len());
+        let cmd = OsString::from_wide(&buf[..end]).to_string_lossy().into_owned();
+        let exe = cmd.trim_start_matches('"').split('"').next()
+            .or_else(|| cmd.split(' ').next()).unwrap_or("").to_string();
+        if !exe.is_empty() && Path::new(&exe).exists() { Some(exe) } else { None }
+    }
+}
+
+#[cfg(windows)]
+fn get_app_friendly_name_win(app_name: &str) -> Option<String> {
+    use std::ffi::{OsStr, OsString};
+    use std::os::windows::ffi::{OsStrExt, OsStringExt};
+    let key_path = format!("Applications\\{}", app_name);
+    unsafe {
+        let key_wide: Vec<u16> = OsStr::new(&key_path).encode_wide().chain(std::iter::once(0)).collect();
+        let mut hkey: winapi::shared::minwindef::HKEY = std::ptr::null_mut();
+        if winapi::um::winreg::RegOpenKeyExW(
+            winapi::um::winreg::HKEY_CLASSES_ROOT, key_wide.as_ptr(), 0, winapi::um::winnt::KEY_READ, &mut hkey,
+        ) != 0 { return None; }
+        let mut buf = vec![0u16; 260];
+        let mut buf_size = (260u32 * 2);
+        let val_name: Vec<u16> = "FriendlyAppName\0".encode_utf16().collect();
+        let ok = winapi::um::winreg::RegQueryValueExW(
+            hkey, val_name.as_ptr(), std::ptr::null_mut(), std::ptr::null_mut(),
+            buf.as_mut_ptr() as *mut u8, &mut buf_size,
+        );
+        winapi::um::winreg::RegCloseKey(hkey);
+        if ok != 0 { return None; }
+        let end = buf.iter().position(|&c| c == 0).unwrap_or(buf.len());
+        let s = OsString::from_wide(&buf[..end]).to_string_lossy().into_owned();
+        if s.is_empty() { None } else { Some(s) }
+    }
+}
+
+// ─── Open with specific app ──────────────────────────────────────────────────
+
+#[command]
+pub async fn open_with_app(path: String, app_path: String) -> Result<(), String> {
+    tokio::task::spawn_blocking(move || {
+        #[cfg(windows)]
+        use std::os::windows::process::CommandExt;
+        let mut cmd = std::process::Command::new(&app_path);
+        cmd.arg(&path);
+        #[cfg(windows)]
+        cmd.creation_flags(0x0800_0000);
+        cmd.spawn().map(|_| ()).map_err(|e| e.to_string())
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+
+// ─── Eject removable drive ───────────────────────────────────────────────────
+
+#[command]
+pub async fn eject_drive(path: String) -> Result<(), String> {
+    tokio::task::spawn_blocking(move || {
+        #[cfg(windows)]
+        use std::os::windows::process::CommandExt;
+        let drive = path.chars().next().ok_or("Invalid path")?;
+        let script = format!(
+            "$shell = New-Object -COM Shell.Application; $folder = $shell.Namespace(17); $item = $folder.ParseName('{}:\\'); if($item){{$item.InvokeVerb('Eject')}}",
+            drive
+        );
+        let mut cmd = std::process::Command::new("powershell");
+        cmd.args(["-NoProfile", "-NonInteractive", "-Command", &script]);
+        #[cfg(windows)]
+        cmd.creation_flags(0x0800_0000);
+        cmd.output().map(|_| ()).map_err(|e| e.to_string())
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+
+// ─── Set file attributes ─────────────────────────────────────────────────────
+
+#[command]
+pub async fn set_file_attributes(path: String, readonly: bool, hidden: bool) -> Result<(), String> {
+    tokio::task::spawn_blocking(move || {
+        #[cfg(windows)]
+        {
+            use std::ffi::OsStr;
+            use std::os::windows::ffi::OsStrExt;
+            use std::os::windows::fs::MetadataExt;
+            let meta = std::fs::metadata(&path).map_err(|e| e.to_string())?;
+            let mut attrs = meta.file_attributes();
+            if readonly { attrs |= 0x1; } else { attrs &= !0x1; }
+            if hidden { attrs |= 0x2; } else { attrs &= !0x2; }
+            let wide: Vec<u16> = OsStr::new(&path).encode_wide().chain(std::iter::once(0)).collect();
+            let result = unsafe { winapi::um::fileapi::SetFileAttributesW(wide.as_ptr(), attrs) };
+            if result == 0 { Err("SetFileAttributesW failed".to_string()) } else { Ok(()) }
+        }
+        #[cfg(not(windows))]
+        {
+            let mut perm = std::fs::metadata(&path).map_err(|e| e.to_string())?.permissions();
+            perm.set_readonly(readonly);
+            std::fs::set_permissions(&path, perm).map_err(|e| e.to_string())
+        }
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+
 #[command]
 pub async fn get_dir_size(path: String) -> Result<u64, String> {
     tokio::task::spawn_blocking(move || {

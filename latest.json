@@ -1,11 +1,11 @@
 {
-  "version": "1.0.7",
-  "notes": "Downloads folder now opens sorted by date modified (newest first). Every folder remembers the last sort you set on it.",
-  "pub_date": "2026-06-08T10:08:16Z",
+  "version": "1.0.8",
+  "notes": "v1.0.8 — Major feature update: 50+ new features matching Windows File Explorer\n\n• Inline rename (click to rename in-place, F2)\n• Keyboard navigation (arrow keys, Enter to open, Shift+Arrow to extend selection)\n• New Folder with inline creation (Ctrl+Shift+N, right-click empty space)\n• File conflict dialog (Replace / Skip / Keep Both) before any paste\n• Undo/Redo for file operations (Ctrl+Z/Ctrl+Y)\n• Rubber-band lasso selection\n• Invert selection (Ctrl+I)\n• Right-click empty space: New Folder, Sort by, Paste, Refresh, Properties\n• Properties dialog (General tab: size, dates, attributes, NTFS flags)\n• Open With dialog — choose which app opens a file\n• Run as Administrator in context menu\n• Create ZIP from selection (right-click Compress to ZIP)\n• Extract archive to custom path (Extract to…)\n• Create Shortcut (.lnk) from right-click\n• Open file location for .lnk shortcuts\n• Set as Desktop Background for images\n• Print file from right-click\n• Eject removable drives from sidebar\n• NTFS compressed files shown in blue, encrypted in green\n• Address bar autocomplete as you type (Tab to complete)\n• Address bar history dropdown\n• Column drag-to-reorder and double-click to auto-size\n• Checkbox selection mode toggle\n• Show/hide file extensions toggle\n• F4/Ctrl+L focuses address bar, Ctrl+E focuses search, F11 toggles fullscreen\n• Alt+P toggles preview panel, Alt+Enter opens Properties\n• Status bar shows folder/file count breakdown + drive free space\n• Breadcrumb segments are now drop targets for drag-and-drop\n• Sidebar drive entries show eject button for removable media",
+  "pub_date": "2026-06-08T00:00:00Z",
   "platforms": {
     "windows-x86_64": {
-      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVRMkVJNWlYTjdvZlRUdzJxbzkybDZrcnFTWDlUb0kySHRjTEtuNy8xcXJQZEdqV0RGOXhhNzMydWc3bnNPVXpTSzYwa1B3eldPK0NVQlprVG9PajB1SWkzR0doV0FvL2dnPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzgwOTEzMjk2CWZpbGU6Tm92YSBFeHBsb3Jlcl8xLjAuN194NjQtc2V0dXAuZXhlCnZ6NUpWUG9Jd052RkYxSU8xNGVlQm5pa0EzcHNodEViRkc4Ymt2NmlRVE5JVUhpbWk4SlZmVWxtNFU2MDc1K2lxZ2lrNFA4cFJ5U0hmcjZWZXdqdUF3PT0K",
-      "url": "https://github.com/krbxDev/nova-explorer/releases/download/v1.0.7/Nova.Explorer_1.0.7_x64-setup.exe"
+      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVRMkVJNWlYTjdvZlkxOTI4bnFQTDNmaHNnbWc5ZkI4Zm0rVVdyWkQvdDIvTXpVK2IwSnVIMGJwekd4ZUIrN3AycUpQVVFlM0VrcUNTUVZGLzlXRGU4b0FFcnlKeC9iTUFJPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzgwOTE2MDI3CWZpbGU6bm92YS1leHBsb3Jlci5leGUKVW1lbXhHNm9Bd3NWOG5EampzQ3p5enlYQ3llVys3czd3MXNBcWJMU0VXM09yTWNKZmFHSzBmbWtIOXJUdjVENlp6MStXdVpKVnFJRHhjbDVRVURjQnc9PQo=",
+      "url": "https://github.com/krbxDev/nova-explorer/releases/download/v1.0.8/nova-explorer.exe"
     }
   }
 }

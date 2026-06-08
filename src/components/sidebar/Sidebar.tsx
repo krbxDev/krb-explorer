@@ -1,11 +1,11 @@
 import {
   HardDrive, Star, Folder, Home, Download, Music, ImageIcon, Film,
-  ChevronDown, ChevronRight, Clock, Bookmark
+  ChevronDown, ChevronRight, Clock, Bookmark, LogOut
 } from "lucide-react";
 import { useState, useEffect } from "react";
 import { homeDir, desktopDir, downloadDir, documentDir, pictureDir, audioDir, videoDir } from "@tauri-apps/api/path";
 import { useStore } from "../../store";
-import { db } from "../../lib/invoke";
+import { db, fs } from "../../lib/invoke";
 import { cn, formatSize } from "../../lib/utils";
 import type { HistoryEntry } from "../../lib/types";
 
@@ -154,7 +154,45 @@ export function Sidebar() {
       <Section label="Favorites" items={favoriteItems} activePath={activePath} onNavigate={handleNavigate} />
       <Section label="Saved Searches" items={savedSearchItems} activePath={activePath} onNavigate={handleNavigate} defaultOpen={savedSearchItems.length > 0} />
       <Section label="Recent Files" items={recentFileItems} activePath={activePath} onNavigate={handleNavigate} defaultOpen={false} />
-      <Section label="Drives" items={driveItems} activePath={activePath} onNavigate={handleNavigate} />
+      {/* Drives with eject button for removable */}
+      <div className="mb-1">
+        <button
+          className="w-full flex items-center gap-1 px-3 py-0.5 text-[10px] font-semibold uppercase tracking-wider text-[var(--text-muted)] hover:text-[var(--text-secondary)] transition-colors"
+        >
+          <ChevronDown size={10} />
+          Drives
+        </button>
+        <div className="mt-0.5 space-y-0.5 px-1">
+          {drives.map((d) => (
+            <div key={d.path} className="flex items-center gap-1">
+              <button
+                onClick={() => navigate(activePaneId, d.path)}
+                className={cn(
+                  "flex-1 flex items-center gap-2 px-3 py-1 rounded-[var(--radius-sm)] text-xs transition-colors text-left",
+                  activePath === d.path
+                    ? "bg-[var(--bg-selected)] text-[var(--text-primary)]"
+                    : "text-[var(--text-secondary)] hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)]"
+                )}
+              >
+                <HardDrive size={13} className="text-[var(--text-muted)] shrink-0" />
+                <span className="truncate flex-1">{d.label ? `${d.label} (${d.name})` : d.name}</span>
+                {d.totalSpace > 0 && (
+                  <span className="text-[var(--text-muted)] text-[10px] shrink-0">{formatSize(d.freeSpace)}</span>
+                )}
+              </button>
+              {d.driveType === "Removable" && (
+                <button
+                  onClick={() => fs.ejectDrive(d.path).then(() => useStore.getState().loadDrives()).catch(() => {})}
+                  title={`Eject ${d.name}`}
+                  className="shrink-0 p-1 rounded text-[var(--text-muted)] hover:text-[var(--danger)] hover:bg-[var(--bg-hover)] transition-colors"
+                >
+                  <LogOut size={11} />
+                </button>
+              )}
+            </div>
+          ))}
+        </div>
+      </div>
     </div>
   );
 }

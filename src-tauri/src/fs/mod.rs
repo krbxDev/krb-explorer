@@ -17,6 +17,9 @@ pub struct FileEntry {
     pub extension: Option<String>,
     pub readonly: bool,
     pub icon_type: String,
+    pub ntfs_compressed: bool,
+    pub ntfs_encrypted: bool,
+    pub is_system: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -71,6 +74,15 @@ pub fn entry_from_path(path: &Path) -> Option<FileEntry> {
         extension.as_deref().unwrap_or("file").to_string()
     };
 
+    #[cfg(windows)]
+    let (ntfs_compressed, ntfs_encrypted, is_system) = {
+        use std::os::windows::fs::MetadataExt;
+        let attrs = real_meta.file_attributes();
+        (attrs & 0x800 != 0, attrs & 0x4000 != 0, attrs & 0x4 != 0)
+    };
+    #[cfg(not(windows))]
+    let (ntfs_compressed, ntfs_encrypted, is_system) = (false, false, false);
+
     Some(FileEntry {
         name,
         path: path.to_string_lossy().into_owned(),
@@ -83,5 +95,8 @@ pub fn entry_from_path(path: &Path) -> Option<FileEntry> {
         extension,
         readonly: real_meta.permissions().readonly(),
         icon_type,
+        ntfs_compressed,
+        ntfs_encrypted,
+        is_system,
     })
 }

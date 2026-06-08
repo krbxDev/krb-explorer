@@ -1,7 +1,8 @@
 import { create } from "zustand";
 import { immer } from "zustand/middleware/immer";
 import type {
-  PaneState, Tab, FileEntry, DriveInfo, Favorite, SortKey, ViewMode, CopyProgress
+  PaneState, Tab, FileEntry, DriveInfo, Favorite, SortKey, ViewMode, CopyProgress,
+  OperationRecord
 } from "../lib/types";
 import { fs, db, search, git, watcher } from "../lib/invoke";
 import { generateId, pathParent } from "../lib/utils";
@@ -32,8 +33,28 @@ interface NovaStore {
   bulkRenameOpen: boolean;
   diskUsageOpen: boolean;
   columnWidths: Record<string, number>;
+  columnOrder: string[];
+  // Undo/redo
+  undoStack: OperationRecord[];
+  redoStack: OperationRecord[];
+  // UI state
+  checkboxMode: boolean;
+  showExtensions: boolean;
+  showSystemFiles: boolean;
+  propertiesPath: string | null;
+  propertiesOpen: boolean;
 
   navigate: (paneId: string, path: string) => Promise<void>;
+  invertSelection: (paneId: string) => void;
+  pushUndo: (op: OperationRecord) => void;
+  undo: () => Promise<void>;
+  redo: () => Promise<void>;
+  toggleCheckboxMode: () => void;
+  toggleShowExtensions: () => void;
+  toggleShowSystemFiles: () => void;
+  openProperties: (path: string) => void;
+  closeProperties: () => void;
+  setColumnOrder: (order: string[]) => void;
   navigateBack: (paneId: string) => void;
   navigateForward: (paneId: string) => void;
   navigateUp: (paneId: string) => void;
@@ -137,7 +158,15 @@ export const useStore = create<NovaStore>()(
     bulkRenameOpen: false,
     diskUsageOpen: false,
     columnWidths: { name: 400, modified: 144, type: 96, size: 80 },
+    columnOrder: ["name", "modified", "type", "size"],
     folderSortPrefs: {},
+    undoStack: [],
+    redoStack: [],
+    checkboxMode: false,
+    showExtensions: true,
+    showSystemFiles: false,
+    propertiesPath: null,
+    propertiesOpen: false,
 
     navigate: async (paneId, path) => {
       const { ARCHIVE_EXTS } = await import("../lib/utils");
@@ -233,6 +262,10 @@ export const useStore = create<NovaStore>()(
         }
 
         entries = await fs.listDirectory(path, pane?.showHidden ?? false, resolvedSort.key, resolvedSort.asc);
+        // Filter system files if toggled off
+        if (!get().showSystemFiles) {
+          entries = entries.filter((e) => !e.isSystem);
+        }
 
         // Git status (non-blocking, best-effort)
         git.getStatus(path).then((gs) => {
@@ -421,12 +454,25 @@ export const useStore = create<NovaStore>()(
       const destPane = panes[destPaneId];
       if (!destPane) return;
       const destDir = destPane.path;
+
+      // Check for conflicts first — emit event for ConflictDialog to handle
+      const conflicts = await fs.checkConflicts(clipboard.paths, destDir).catch(() => []);
+      if (conflicts.length > 0) {
+        // Dispatch a custom event so ConflictDialog can intercept
+        window.dispatchEvent(new CustomEvent("nova:conflict", {
+          detail: { conflicts, paths: clipboard.paths, destDir, mode: clipboard.mode, destPaneId }
+        }));
+        return;
+      }
+
       get().setCopyProgress({ current: 0, total: clipboard.paths.length, file: "", done: false });
       try {
         if (clipboard.mode === "copy") {
           await fs.copyItems(clipboard.paths, destDir);
+          get().pushUndo({ id: Math.random().toString(36).slice(2), kind: 'copy', sources: clipboard.paths, dest: destDir, timestamp: Date.now() });
         } else {
           await fs.moveItems(clipboard.paths, destDir);
+          get().pushUndo({ id: Math.random().toString(36).slice(2), kind: 'move', sources: clipboard.paths, dest: destDir, timestamp: Date.now() });
           set((s) => { s.clipboard = null; });
         }
       } finally {
@@ -451,6 +497,89 @@ export const useStore = create<NovaStore>()(
         set((s) => { s.globalSearching = false; });
       }
     },
+
+    invertSelection: (paneId) => {
+      set((s) => {
+        const p = s.panes[paneId];
+        if (!p) return;
+        const all = new Set(p.entries.map((e) => e.path));
+        const newSel = new Set<string>();
+        all.forEach((path) => { if (!p.selection.has(path)) newSel.add(path); });
+        p.selection = newSel;
+      });
+    },
+
+    pushUndo: (op) => {
+      set((s) => {
+        s.undoStack.push(op);
+        if (s.undoStack.length > 50) s.undoStack.shift();
+        s.redoStack = [];
+      });
+    },
+
+    undo: async () => {
+      const { undoStack } = get();
+      if (undoStack.length === 0) return;
+      const op = undoStack[undoStack.length - 1];
+      set((s) => { s.undoStack.pop(); s.redoStack.push(op); });
+      try {
+        if (op.kind === 'rename' && op.sources[0] && op.newName && op.oldName) {
+          const parent = op.sources[0].replace(/[\\/][^\\/]+$/, "");
+          const currentPath = parent + "\\" + op.newName;
+          await fs.renameItem(currentPath, op.oldName);
+        } else if (op.kind === 'move' && op.dest) {
+          const moved = op.sources.map(s => {
+            const name = s.replace(/\\/g, "/").split("/").pop()!;
+            return op.dest! + "\\" + name;
+          });
+          await fs.moveItems(moved, op.sources[0].replace(/[\\/][^\\/]+$/, ""));
+        } else if (op.kind === 'copy' && op.dest) {
+          const copied = op.sources.map(s => {
+            const name = s.replace(/\\/g, "/").split("/").pop()!;
+            return op.dest! + "\\" + name;
+          });
+          await fs.deleteItems(copied, false);
+        } else if (op.kind === 'create' && op.sources[0]) {
+          await fs.deleteItems(op.sources, false);
+        }
+        const { activePaneId } = get();
+        await get().refresh(activePaneId);
+      } catch { /* best-effort */ }
+    },
+
+    redo: async () => {
+      const { redoStack } = get();
+      if (redoStack.length === 0) return;
+      const op = redoStack[redoStack.length - 1];
+      set((s) => { s.redoStack.pop(); s.undoStack.push(op); });
+      // Re-apply the operation
+      try {
+        if (op.kind === 'rename' && op.sources[0] && op.oldName && op.newName) {
+          const parent = op.sources[0].replace(/[\\/][^\\/]+$/, "");
+          await fs.renameItem(parent + "\\" + op.oldName, op.newName);
+        } else if (op.kind === 'move' && op.dest) {
+          await fs.moveItems(op.sources, op.dest);
+        } else if (op.kind === 'copy' && op.dest) {
+          await fs.copyItems(op.sources, op.dest);
+        } else if (op.kind === 'create' && op.sources[0]) {
+          await fs.createDirectory(op.sources[0]);
+        }
+        const { activePaneId } = get();
+        await get().refresh(activePaneId);
+      } catch { /* best-effort */ }
+    },
+
+    toggleCheckboxMode: () => set((s) => { s.checkboxMode = !s.checkboxMode; }),
+    toggleShowExtensions: () => set((s) => { s.showExtensions = !s.showExtensions; }),
+    toggleShowSystemFiles: () => {
+      set((s) => { s.showSystemFiles = !s.showSystemFiles; });
+      const { activePaneId } = get();
+      get().refresh(activePaneId);
+    },
+
+    openProperties: (path) => set((s) => { s.propertiesPath = path; s.propertiesOpen = true; }),
+    closeProperties: () => set((s) => { s.propertiesOpen = false; s.propertiesPath = null; }),
+    setColumnOrder: (order) => set((s) => { s.columnOrder = order; }),
 
     loadColumnWidths: async () => {
       try {

@@ -1,7 +1,8 @@
 import {
   ChevronLeft, ChevronRight, ChevronUp, RotateCcw, LayoutList,
   LayoutGrid, AlignJustify, Eye, EyeOff, SplitSquareHorizontal,
-  SplitSquareVertical, Terminal, FileEdit, BarChart3, PanelRight
+  SplitSquareVertical, Terminal, FileEdit, BarChart3, PanelRight,
+  CheckSquare, Type, FolderPlus, Undo2, Redo2
 } from "lucide-react";
 import { useStore } from "../../store";
 import { BreadcrumbBar } from "./BreadcrumbBar";
@@ -45,6 +46,9 @@ export function Toolbar() {
     setViewMode, setShowHidden, setSplit, openPreview, closePreview,
     toggleTerminal, toggleBulkRename, toggleDiskUsage,
     terminalOpen, bulkRenameOpen, diskUsageOpen,
+    checkboxMode, toggleCheckboxMode,
+    showExtensions, toggleShowExtensions,
+    undoStack, redoStack, undo, redo,
   } = useStore();
 
   const pane = panes[activePaneId];
@@ -68,6 +72,19 @@ export function Toolbar() {
       <Btn icon={<RotateCcw size={13} />} label="Refresh (F5)" onClick={() => refresh(activePaneId)} />
 
       <Sep />
+
+      <Btn icon={<Undo2 size={14} />} label="Undo (Ctrl+Z)" onClick={undo} disabled={undoStack.length === 0} />
+      <Btn icon={<Redo2 size={14} />} label="Redo (Ctrl+Y)" onClick={redo} disabled={redoStack.length === 0} />
+
+      <Sep />
+
+      <Btn
+        icon={<FolderPlus size={14} />}
+        label="New Folder (Ctrl+Shift+N)"
+        onClick={() => window.dispatchEvent(new CustomEvent("nova:newfolder", { detail: { paneId: activePaneId } }))}
+      />
+
+      <Sep />
       <BreadcrumbBar paneId={activePaneId} />
       <Sep />
 
@@ -84,6 +101,18 @@ export function Toolbar() {
         onClick={() => setShowHidden(activePaneId, !pane.showHidden)}
         active={pane.showHidden}
       />
+      <Btn
+        icon={<Type size={14} />}
+        label={showExtensions ? "Hide file extensions" : "Show file extensions"}
+        onClick={toggleShowExtensions}
+        active={showExtensions}
+      />
+      <Btn
+        icon={<CheckSquare size={14} />}
+        label="Toggle checkbox selection mode"
+        onClick={toggleCheckboxMode}
+        active={checkboxMode}
+      />
 
       <Sep />
 
@@ -96,7 +125,7 @@ export function Toolbar() {
 
       <Sep />
 
-      <Btn icon={<PanelRight size={14} />} label="Preview panel"
+      <Btn icon={<PanelRight size={14} />} label="Preview panel (Alt+P)"
         onClick={() => previewOpen ? closePreview() : openPreview(pane.path)}
         active={previewOpen} />
       <Btn icon={<Terminal size={14} />} label="Terminal (Ctrl+`)"

@@ -1,5 +1,5 @@
 import { invoke as tauriInvoke } from "@tauri-apps/api/core";
-import type { FileEntry, DriveInfo, SearchResult, Favorite, HistoryEntry } from "./types";
+import type { FileEntry, DriveInfo, SearchResult, Favorite, HistoryEntry, ConflictInfo, FileProperties, OpenWithApp } from "./types";
 
 const invoke = tauriInvoke;
 
@@ -22,6 +22,19 @@ export const fs = {
     invoke<[string, string][]>("bulk_rename", { paths, pattern, replacement, useRegex, counterStart }),
   getDirSize: (path: string) => invoke<number>("get_dir_size", { path }),
   getDiskUsage: (path: string, depth = 2) => invoke<any>("get_disk_usage", { path, depth }),
+  pathSuggestions: (partial: string) => invoke<string[]>("path_suggestions", { partial }),
+  checkConflicts: (sources: string[], destDir: string) => invoke<ConflictInfo[]>("check_conflicts", { sources, destDir }),
+  createZip: (sources: string[], outputPath: string) => invoke<void>("create_zip", { sources, outputPath }),
+  getFileProperties: (path: string) => invoke<FileProperties>("get_file_properties", { path }),
+  runAsAdmin: (path: string) => invoke<void>("run_as_admin", { path }),
+  setWallpaper: (path: string) => invoke<void>("set_wallpaper", { path }),
+  printFile: (path: string) => invoke<void>("print_file", { path }),
+  createShortcut: (target: string, shortcutPath: string) => invoke<void>("create_shortcut", { target, shortcutPath }),
+  resolveShortcut: (lnkPath: string) => invoke<string>("resolve_shortcut", { lnkPath }),
+  getOpenWithApps: (ext: string) => invoke<OpenWithApp[]>("get_open_with_apps", { ext }),
+  openWithApp: (path: string, appPath: string) => invoke<void>("open_with_app", { path, appPath }),
+  ejectDrive: (path: string) => invoke<void>("eject_drive", { path }),
+  setFileAttributes: (path: string, readonly: boolean, hidden: boolean) => invoke<void>("set_file_attributes", { path, readonly, hidden }),
 };
 
 export const search = {
