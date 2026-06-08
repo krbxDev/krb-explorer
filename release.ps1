@@ -63,7 +63,8 @@ $json = @"
   }
 }
 "@
-$json | Out-File -FilePath "latest.json" -Encoding utf8 -NoNewline
+# Write without BOM (PowerShell 5.1 Out-File utf8 adds BOM; use .NET directly)
+[System.IO.File]::WriteAllText("$PWD\latest.json", $json, [System.Text.UTF8Encoding]::new($false))
 
 # Commit and push
 Write-Host "Committing..." -ForegroundColor Cyan
