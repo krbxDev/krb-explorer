@@ -1,9 +1,6 @@
 {
   "version": "1.0.30",
-  "notes": "v1.0.29 - Fix software update check
-
-- Updater now fetches latest.json from GitHub release assets instead of raw CDN
-- Eliminates BOM and CDN caching issues that caused update check to fail",
+  "notes": "v1.0.30 - Fix software update check",
   "pub_date": "2026-06-08T16:10:34Z",
   "platforms": {
     "windows-x86_64": {
