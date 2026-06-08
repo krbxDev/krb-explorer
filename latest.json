@@ -1,11 +1,11 @@
 {
-  "version": "1.0.9",
-  "notes": "v1.0.8 — Major feature update: 50+ new features matching Windows File Explorer\n\n• Inline rename (click to rename in-place, F2)\n• Keyboard navigation (arrow keys, Enter to open, Shift+Arrow to extend selection)\n• New Folder with inline creation (Ctrl+Shift+N, right-click empty space)\n• File conflict dialog (Replace / Skip / Keep Both) before any paste\n• Undo/Redo for file operations (Ctrl+Z/Ctrl+Y)\n• Rubber-band lasso selection\n• Invert selection (Ctrl+I)\n• Right-click empty space: New Folder, Sort by, Paste, Refresh, Properties\n• Properties dialog (General tab: size, dates, attributes, NTFS flags)\n• Open With dialog — choose which app opens a file\n• Run as Administrator in context menu\n• Create ZIP from selection (right-click Compress to ZIP)\n• Extract archive to custom path (Extract to…)\n• Create Shortcut (.lnk) from right-click\n• Open file location for .lnk shortcuts\n• Set as Desktop Background for images\n• Print file from right-click\n• Eject removable drives from sidebar\n• NTFS compressed files shown in blue, encrypted in green\n• Address bar autocomplete as you type (Tab to complete)\n• Address bar history dropdown\n• Column drag-to-reorder and double-click to auto-size\n• Checkbox selection mode toggle\n• Show/hide file extensions toggle\n• F4/Ctrl+L focuses address bar, Ctrl+E focuses search, F11 toggles fullscreen\n• Alt+P toggles preview panel, Alt+Enter opens Properties\n• Status bar shows folder/file count breakdown + drive free space\n• Breadcrumb segments are now drop targets for drag-and-drop\n• Sidebar drive entries show eject button for removable media",
-  "pub_date": "2026-06-08T12:00:00Z",
+  "version": "1.0.10",
+  "notes": "v1.0.10 — Fix right-click context menu positioning\n\n• Context menu now measures its actual rendered height before positioning\n• Menu no longer clips off the top of the screen when right-clicking files near the top of the list\n• Menu flips upward from the cursor when near the bottom of the screen\n• Hard-clamped to viewport edges with a 6px margin on all sides",
+  "pub_date": "2026-06-08T14:00:00Z",
   "platforms": {
     "windows-x86_64": {
-      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVRMkVJNWlYTjdvZlVVL0ZhaWVscFE5TnpMQ2Jaa1J4QlFUVER4b2FELzYyWVgyTTIyd2lnUjJ1Y0lmNm84NUFtcFNFN1cyV3BJQzE0T0hKRVdsZm5ZaklkRmo3aXdnTEEwPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzgwOTE4MDM2CWZpbGU6bm92YS1leHBsb3Jlci5leGUKTGZJSVBTSG9TOXpqOXdCR01TZTg4K1NtZ1NhVzlEcnNreE82OExuNzdLR0MrZHVlUkhQQ0w1OG5RY2MwZ01iWjJqejE4SlNPTm5tbmNaR09JUkI1QlE9PQo=",
-      "url": "https://github.com/krbxDev/nova-explorer/releases/download/v1.0.9/nova-explorer.exe"
+      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVRMkVJNWlYTjdvZlQ5bkRJRnB3OW51TytpMmh0V1hMY1JHSno4eFI5K0pQM1l0VVJHNGxRa2cvL1l4RlJ6alA3Qk1HQlhGZnUvbFlldVNCQUpGZ2FYUHVWY2JtdHMyY0FrPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzgwOTE4ODQ0CWZpbGU6bm92YS1leHBsb3Jlci5leGUKbFdBSzJtVGh0ZVpBMUl2NU5nNDZ1QXp5VnlvVjNtRXdNOC9IejQwRm5yWDBqS3UvamZxR3M1aTlmQ1c0RG1hOWVDS2tucXNMRkJxWGVEeGJ0b29mQUE9PQo=",
+      "url": "https://github.com/krbxDev/nova-explorer/releases/download/v1.0.10/nova-explorer.exe"
     }
   }
 }

@@ -1,4 +1,4 @@
-import { useEffect, useRef } from "react";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import type { ContextMenuAction } from "../../lib/types";
 import { cn } from "../../lib/utils";
 
@@ -11,6 +11,22 @@ interface Props {
 
 export function ContextMenu({ x, y, actions, onClose }: Props) {
   const ref = useRef<HTMLDivElement>(null);
+  const [pos, setPos] = useState({ left: x, top: y, visible: false });
+
+  // After the menu renders, measure its actual size and clamp to viewport
+  useLayoutEffect(() => {
+    if (!ref.current) return;
+    const { offsetWidth: w, offsetHeight: h } = ref.current;
+    const vw = window.innerWidth;
+    const vh = window.innerHeight;
+    const MARGIN = 6;
+    let left = x;
+    let top = y;
+    if (left + w + MARGIN > vw) left = Math.max(MARGIN, x - w);
+    if (top + h + MARGIN > vh) top = Math.max(MARGIN, vh - h - MARGIN);
+    if (top < MARGIN) top = MARGIN;
+    setPos({ left, top, visible: true });
+  }, [x, y]);
 
   useEffect(() => {
     const handler = (e: MouseEvent) => {
@@ -25,18 +41,16 @@ export function ContextMenu({ x, y, actions, onClose }: Props) {
     };
   }, [onClose]);
 
-  // Adjust position to stay in viewport
-  const vw = window.innerWidth;
-  const vh = window.innerHeight;
-  const menuW = 220;
-  const menuH = actions.length * 28 + 8;
-  const left = x + menuW > vw ? x - menuW : x;
-  const top = y + menuH > vh ? y - menuH : y;
-
   return (
     <div
       ref={ref}
-      style={{ position: "fixed", left, top, zIndex: 9999 }}
+      style={{
+        position: "fixed",
+        left: pos.left,
+        top: pos.top,
+        zIndex: 9999,
+        visibility: pos.visible ? "visible" : "hidden",
+      }}
       className="w-[220px] bg-[var(--bg-elevated)] border border-[var(--border)] rounded-[var(--radius)] shadow-[var(--shadow)] py-1 animate-in fade-in zoom-in-95 duration-100"
     >
       {actions.map((action, i) => {
