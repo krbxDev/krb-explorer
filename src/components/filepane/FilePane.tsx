@@ -1,23 +1,25 @@
 import { useState, useCallback, useEffect, useMemo, useRef } from "react";
-import { Loader2, AlertCircle, Search, X } from "lucide-react";
+import { Loader2, AlertCircle, Search, X, ChevronLeft, ChevronRight, ChevronUp } from "lucide-react";
 import { listen } from "@tauri-apps/api/event";
 import { useStore } from "../../store";
 import { fs } from "../../lib/invoke";
 import { DetailsView } from "./DetailsView";
 import { GridView } from "./GridView";
 import { ContextMenu } from "./ContextMenu";
+import { BreadcrumbBar } from "../toolbar/BreadcrumbBar";
 import type { FileEntry, ContextMenuAction } from "../../lib/types";
 import { cn, ARCHIVE_EXTS, OPENER_EXTS, IMAGE_EXTS, TEXT_EXTS, VIDEO_EXTS, AUDIO_EXTS } from "../../lib/utils";
 
-interface Props { paneId: string; }
+interface Props { paneId: string; showNavBar?: boolean; }
 interface CtxMenuState { x: number; y: number; entry: FileEntry | null }
 
-export function FilePane({ paneId }: Props) {
+export function FilePane({ paneId, showNavBar }: Props) {
   const {
     panes, navigate, openPreview, setSelection, clearSelection, selectAll, invertSelection,
     addFavorite, refresh, setClipboard, pasteClipboard, clipboard,
     openQuickLook, activePaneId, setActivePane, toggleBulkRename, openProperties,
     pushUndo, previewOpen, closePreview, openPalette,
+    navigateBack, navigateForward, navigateUp,
   } = useStore();
   const pane = panes[paneId];
   const [ctxMenu, setCtxMenu] = useState<CtxMenuState | null>(null);
@@ -454,6 +456,46 @@ export function FilePane({ paneId }: Props) {
       }}
       tabIndex={0}
     >
+      {/* Per-pane navigation bar (shown in split mode) */}
+      {showNavBar && (
+        <div
+          className={cn(
+            "flex items-center h-8 px-1 gap-0.5 border-b shrink-0",
+            isActive
+              ? "bg-[var(--bg-surface)] border-[var(--accent)]/40"
+              : "bg-[var(--bg-base)] border-[var(--border)]"
+          )}
+          onClick={(e) => e.stopPropagation()}
+        >
+          <button
+            onClick={() => navigateBack(paneId)}
+            disabled={pane.historyIndex <= 0}
+            title="Back"
+            className="h-6 w-6 flex items-center justify-center rounded text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-hover)] disabled:opacity-30 disabled:pointer-events-none"
+          >
+            <ChevronLeft size={14} />
+          </button>
+          <button
+            onClick={() => navigateForward(paneId)}
+            disabled={pane.historyIndex >= pane.history.length - 1}
+            title="Forward"
+            className="h-6 w-6 flex items-center justify-center rounded text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-hover)] disabled:opacity-30 disabled:pointer-events-none"
+          >
+            <ChevronRight size={14} />
+          </button>
+          <button
+            onClick={() => navigateUp(paneId)}
+            title="Up"
+            className="h-6 w-6 flex items-center justify-center rounded text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-hover)]"
+          >
+            <ChevronUp size={14} />
+          </button>
+          <div className="flex-1 overflow-hidden">
+            <BreadcrumbBar paneId={paneId} />
+          </div>
+        </div>
+      )}
+
       {/* Archive banner */}
       {pane.isArchive && pane.archivePath && (
         <div className="flex items-center gap-2 px-3 h-7 bg-[var(--accent-dim)] border-b border-[var(--accent)]/30 shrink-0">

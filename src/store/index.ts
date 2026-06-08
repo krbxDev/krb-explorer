@@ -13,6 +13,7 @@ interface NovaStore {
   panes: Record<string, PaneState>;
   activePaneId: string;
   splitMode: "none" | "horizontal" | "vertical";
+  splitPaneIds: [string, string] | null; // stable order so panes don't swap on click
   tabs: Tab[];
   activeTabId: string;
   drives: DriveInfo[];
@@ -138,6 +139,7 @@ export const useStore = create<NovaStore>()(
     panes: { [initialPane.id]: initialPane },
     activePaneId: initialPane.id,
     splitMode: "none",
+    splitPaneIds: null,
     tabs: [initialTab],
     activeTabId: initialTab.id,
     drives: [],
@@ -405,16 +407,28 @@ export const useStore = create<NovaStore>()(
     setSplit: (mode) => {
       set((s) => {
         s.splitMode = mode;
-        if (mode !== "none" && Object.keys(s.panes).length < 2) {
+        if (mode === "none") {
+          s.splitPaneIds = null;
+          return;
+        }
+        // Create second pane if needed
+        if (Object.keys(s.panes).length < 2) {
           const currentPane = s.panes[s.activePaneId];
           const newPane = createPane(currentPane?.path ?? HOME);
           s.panes[newPane.id] = newPane;
+          s.splitPaneIds = [s.activePaneId, newPane.id];
+        } else if (!s.splitPaneIds) {
+          const ids = Object.keys(s.panes);
+          s.splitPaneIds = [s.activePaneId, ids.find((id) => id !== s.activePaneId)!];
         }
       });
       if (mode !== "none") {
-        const panes = Object.values(get().panes);
-        const secondPane = panes.find((p) => p.id !== get().activePaneId);
-        if (secondPane) get().navigate(secondPane.id, secondPane.path);
+        const { splitPaneIds } = get();
+        const secondId = splitPaneIds?.[1];
+        if (secondId) {
+          const secondPane = get().panes[secondId];
+          if (secondPane) get().navigate(secondId, secondPane.path);
+        }
       }
     },
 

@@ -21,7 +21,7 @@ import { useKeyboard } from "./hooks/useKeyboard";
 
 export function App() {
   const {
-    activePaneId, panes, splitMode, tabs, activeTabId,
+    activePaneId, panes, splitMode, splitPaneIds, tabs, activeTabId,
     navigate, loadDrives, loadFavorites, previewOpen,
     sidebarCollapsed, terminalOpen,
   } = useStore();
@@ -43,9 +43,9 @@ export function App() {
     if (initialPaneId) navigate(initialPaneId, panes[initialPaneId].path);
   }, []);
 
-  const paneIds = Object.keys(panes);
-  const secondPaneId = paneIds.find((id) => id !== activePaneId);
   const activeTab = tabs.find((t) => t.id === activeTabId);
+  const leftPaneId  = splitPaneIds?.[0] ?? activePaneId;
+  const rightPaneId = splitPaneIds?.[1];
 
   return (
     <div className="flex flex-col h-full bg-[var(--bg-base)] overflow-hidden">
@@ -65,13 +65,13 @@ export function App() {
 
           {splitMode !== "none" && (
             <>
-              <div className="flex-1 overflow-hidden">
-                <FilePane paneId={activePaneId} />
+              <div className="flex-1 overflow-hidden min-w-0 min-h-0">
+                <FilePane paneId={leftPaneId} showNavBar />
               </div>
               <div className={splitMode === "horizontal" ? "w-px bg-[var(--border)]" : "h-px bg-[var(--border)]"} />
-              {secondPaneId && (
-                <div className="flex-1 overflow-hidden">
-                  <FilePane paneId={secondPaneId} />
+              {rightPaneId && (
+                <div className="flex-1 overflow-hidden min-w-0 min-h-0">
+                  <FilePane paneId={rightPaneId} showNavBar />
                 </div>
               )}
             </>
