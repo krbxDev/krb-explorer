@@ -74,7 +74,7 @@ interface Props {
 }
 
 export function PaneSidebar({ paneId, collapsed, onToggle }: Props) {
-  const { panes, drives, favorites, navigate, openTab, addFavorite, removeFavorite } = useStore();
+  const { panes, drives, favorites, navigate, openTab, addFavorite, removeFavorite, renameFavorite, openProperties } = useStore();
   const activePath = panes[paneId]?.path ?? "";
   const [quickAccess, setQuickAccess] = useState<SideItem[]>([]);
   const [ctx, setCtx] = useState<CtxState | null>(null);
@@ -97,13 +97,24 @@ export function PaneSidebar({ paneId, collapsed, onToggle }: Props) {
 
   const copyPath = (path: string) => navigator.clipboard.writeText(path).catch(() => {});
 
+  const openInNewWindow = (path: string) => {
+    import("@tauri-apps/api/webviewWindow").then(({ WebviewWindow }) => {
+      new WebviewWindow(`window-${Date.now()}`, {
+        url: `/?path=${encodeURIComponent(path)}`,
+        title: "KRB Explorer",
+        width: 1100, height: 700,
+      });
+    }).catch(() => {});
+  };
+
   const buildActions = (item: SideItem, type: CtxState["type"]): ContextMenuAction[] => {
     const isFav = favorites.some((f) => f.path === item.path && !f.isSearch);
     const actions: ContextMenuAction[] = [
-      { id: "open",     label: "Open",           action: () => navigate(paneId, item.path) },
-      { id: "new-tab",  label: "Open in new tab", action: () => openTab(item.path) },
-      { id: "sep1",     label: "", separator: true, action: () => {} },
-      { id: "copy-path", label: "Copy path",      action: () => copyPath(item.path) },
+      { id: "open",       label: "Open",              action: () => navigate(paneId, item.path) },
+      { id: "new-tab",    label: "Open in new tab",   action: () => openTab(item.path) },
+      { id: "new-window", label: "Open in new window", action: () => openInNewWindow(item.path) },
+      { id: "sep1",       label: "", separator: true, action: () => {} },
+      { id: "copy-path",  label: "Copy path",         action: () => copyPath(item.path) },
     ];
 
     if (type === "folder") {
@@ -117,11 +128,26 @@ export function PaneSidebar({ paneId, collapsed, onToggle }: Props) {
 
     if (type === "favorite") {
       actions.push({ id: "sep2", label: "", separator: true, action: () => {} });
+      actions.push({ id: "rename-fav", label: "Rename", action: () => {
+        const newName = window.prompt("Rename favorite:", item.label);
+        if (newName && newName.trim() && newName.trim() !== item.label) {
+          renameFavorite(item.path, newName.trim());
+        }
+      }});
       actions.push({ id: "unfav", label: "Remove from Favorites", danger: true, action: () => removeFavorite(item.path) });
+    }
+
+    if (type !== "drive") {
+      actions.push({ id: "sep-newfolder", label: "", separator: true, action: () => {} });
+      actions.push({ id: "newfolder", label: "New Folder here", action: () => {
+        navigate(paneId, item.path);
+        setTimeout(() => window.dispatchEvent(new CustomEvent("nova:newfolder", { detail: { paneId } })), 100);
+      }});
     }
 
     actions.push({ id: "sep3", label: "", separator: true, action: () => {} });
     actions.push({ id: "terminal", label: "Open in Terminal", action: () => fs.openTerminalAt(item.path).catch(() => {}) });
+    actions.push({ id: "properties", label: "Properties", action: () => openProperties(item.path) });
 
     if (type === "drive" && item.isRemovable) {
       actions.push({ id: "sep4", label: "", separator: true, action: () => {} });

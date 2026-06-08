@@ -84,6 +84,7 @@ interface NovaStore {
   loadFavorites: () => Promise<void>;
   addFavorite: (path: string, name: string, isSearch?: boolean, searchQuery?: string) => Promise<void>;
   removeFavorite: (path: string) => Promise<void>;
+  renameFavorite: (path: string, newName: string) => Promise<void>;
   setSidebarWidth: (w: number) => void;
   setSidebarCollapsed: (v: boolean) => void;
 
@@ -476,6 +477,15 @@ export const useStore = create<NovaStore>()(
 
     removeFavorite: async (path) => {
       await db.removeFavorite(path);
+      await get().loadFavorites();
+    },
+
+    renameFavorite: async (path, newName) => {
+      const { favorites } = get();
+      const fav = favorites.find((f) => f.path === path);
+      if (!fav) return;
+      await db.removeFavorite(path);
+      await db.addFavorite(path, newName, fav.isSearch ?? false, fav.searchQuery ?? undefined);
       await get().loadFavorites();
     },
 

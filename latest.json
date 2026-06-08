@@ -1,11 +1,11 @@
 {
-  "version": "1.0.24",
-  "notes": "v1.0.24 — Right-click menus on sidebar panels\n\n• Right-click any Quick Access, Favorite, or Drive item to get a context menu\n• Actions: Open, Open in new tab, Copy path, Add/Remove from Favorites, Open in Terminal, Eject (removable drives)\n• Works in both the main sidebar and each split pane's sidebar panel",
-  "pub_date": "2026-06-09T05:00:00Z",
+  "version": "1.0.25",
+  "notes": "v1.0.25 — Extended context menus on sidebar panels\n\n• Open in new window — opens path in a fresh KRB Explorer window\n• New Folder here — navigates to the folder and creates a new folder\n• Properties — shows file/folder properties dialog\n• Rename — rename a favorite's display name\n• Works in both the main sidebar and each split pane's sidebar panel",
+  "pub_date": "2026-06-08T12:00:00Z",
   "platforms": {
     "windows-x86_64": {
-      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVRMkVJNWlYTjdvZmFDcFVQZ1NrMm5sblQ0Y2sxSlBTOTBNZWZpRWVmazMzeTcvOWllaUFweEdPenRueE9HdGQ2MlYyQWV4b2htRTFFMFZnWUI4VVl2M1pTUVNFQUoxcWc0PQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzgwOTMxMDIzCWZpbGU6S1JCIEV4cGxvcmVyXzEuMC4yNF94NjQtc2V0dXAuZXhlCkcxcUpYT1oyWjdJcGs0aFVLbHZlSjd3SnFsWE44MnFKYjNCRUc5UlJMcSthRXA0aU5zcS9pVUM4MlVuV2xxczNXcjZFYW1sQi94MzVNYnAyZWF1eER3PT0K",
-      "url": "https://github.com/krbxDev/krb-explorer/releases/download/v1.0.24/KRB.Explorer_1.0.24_x64-setup.exe"
+      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVRMkVJNWlYTjdvZllVeDQ0cEdKQkpSWVFPd2ttdWdRUFlrdzNBalluL29uVTRGM2h6K2R0UTZqYmFFMzZsbVpiRVpjWE81MkpaaVpJelB0ZWJDTmJSQzRnY1F4Z1lFbXd3PQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzgwOTMxNjY4CWZpbGU6S1JCIEV4cGxvcmVyXzEuMC4yNV94NjQtc2V0dXAuZXhlClBMQ2d0N0hrUnFyR0VBU1ltZm51ODFHczNIam0yazdlOXdjaU1lYnBLUkNtNFVuNFRYN2xIWFV4WTExWU5La3VpU0FkaGp2UXpQbjVPajd1d1E1Q0F3PT0K",
+      "url": "https://github.com/krbxDev/krb-explorer/releases/download/v1.0.25/KRB.Explorer_1.0.25_x64-setup.exe"
     }
   }
 }
