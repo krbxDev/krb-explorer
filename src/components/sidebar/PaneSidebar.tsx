@@ -1,0 +1,162 @@
+/**
+ * Compact sidebar embedded inside each split pane.
+ * Shows Quick Access, Favorites, and Drives — clicking navigates that specific pane.
+ */
+import {
+  HardDrive, Star, Folder, Home, Download, Music, ImageIcon, Film,
+  ChevronDown, ChevronRight, LogOut, PanelLeftClose, PanelLeftOpen,
+} from "lucide-react";
+import { useState, useEffect } from "react";
+import { homeDir, desktopDir, downloadDir, documentDir, pictureDir, audioDir, videoDir } from "@tauri-apps/api/path";
+import { useStore } from "../../store";
+import { fs } from "../../lib/invoke";
+import { cn, formatSize } from "../../lib/utils";
+
+interface SideItem { label: string; path: string; icon: React.ReactNode; extra?: string }
+
+function Item({ item, active, onClick }: { item: SideItem; active: boolean; onClick: () => void }) {
+  return (
+    <button
+      onClick={onClick}
+      title={item.label}
+      className={cn(
+        "w-full flex items-center gap-1.5 px-2 py-0.5 rounded text-[11px] transition-colors text-left",
+        active
+          ? "bg-[var(--bg-selected)] text-[var(--text-primary)]"
+          : "text-[var(--text-secondary)] hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)]"
+      )}
+    >
+      <span className="shrink-0 text-[var(--text-muted)]">{item.icon}</span>
+      <span className="truncate flex-1">{item.label}</span>
+      {item.extra && <span className="text-[10px] text-[var(--text-muted)] shrink-0">{item.extra}</span>}
+    </button>
+  );
+}
+
+function Section({ label, items, activePath, onNavigate, defaultOpen = true }: {
+  label: string; items: SideItem[]; activePath: string;
+  onNavigate: (path: string) => void; defaultOpen?: boolean;
+}) {
+  const [open, setOpen] = useState(defaultOpen);
+  if (items.length === 0) return null;
+  return (
+    <div className="mb-1">
+      <button
+        onClick={() => setOpen((v) => !v)}
+        className="w-full flex items-center gap-1 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wider text-[var(--text-muted)] hover:text-[var(--text-secondary)]"
+      >
+        {open ? <ChevronDown size={9} /> : <ChevronRight size={9} />}
+        {label}
+      </button>
+      {open && (
+        <div className="space-y-px px-0.5">
+          {items.map((item) => (
+            <Item key={item.path} item={item} active={activePath === item.path} onClick={() => onNavigate(item.path)} />
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+interface Props {
+  paneId: string;
+  collapsed: boolean;
+  onToggle: () => void;
+}
+
+export function PaneSidebar({ paneId, collapsed, onToggle }: Props) {
+  const { panes, drives, favorites, navigate } = useStore();
+  const activePath = panes[paneId]?.path ?? "";
+  const [quickAccess, setQuickAccess] = useState<SideItem[]>([]);
+
+  useEffect(() => {
+    Promise.all([
+      homeDir(), desktopDir(), downloadDir(), documentDir(), pictureDir(), audioDir(), videoDir(),
+    ]).then(([home, desktop, downloads, documents, pictures, music, videos]) => {
+      setQuickAccess([
+        { label: "Home",      path: home.replace(/[\\/]$/, ""),      icon: <Home size={12} /> },
+        { label: "Desktop",   path: desktop.replace(/[\\/]$/, ""),   icon: <Home size={12} /> },
+        { label: "Downloads", path: downloads.replace(/[\\/]$/, ""), icon: <Download size={12} /> },
+        { label: "Documents", path: documents.replace(/[\\/]$/, ""), icon: <Folder size={12} /> },
+        { label: "Pictures",  path: pictures.replace(/[\\/]$/, ""),  icon: <ImageIcon size={12} /> },
+        { label: "Music",     path: music.replace(/[\\/]$/, ""),     icon: <Music size={12} /> },
+        { label: "Videos",    path: videos.replace(/[\\/]$/, ""),    icon: <Film size={12} /> },
+      ]);
+    }).catch(() => {});
+  }, []);
+
+  const favoriteItems: SideItem[] = favorites
+    .filter((f) => !f.isSearch)
+    .map((f) => ({ label: f.name, path: f.path, icon: <Star size={12} className="text-[#f4b942]" /> }));
+
+  if (collapsed) {
+    return (
+      <div className="flex flex-col items-center pt-1 border-r border-[var(--border)] bg-[var(--bg-surface)]" style={{ width: 28, minWidth: 28 }}>
+        <button
+          onClick={onToggle}
+          title="Expand panel"
+          className="w-6 h-6 flex items-center justify-center rounded text-[var(--text-muted)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-hover)]"
+        >
+          <PanelLeftOpen size={13} />
+        </button>
+      </div>
+    );
+  }
+
+  return (
+    <div className="flex flex-col h-full border-r border-[var(--border)] bg-[var(--bg-surface)] overflow-y-auto py-1" style={{ width: 148, minWidth: 148 }}>
+      {/* Collapse toggle */}
+      <div className="flex items-center justify-end px-1 mb-1">
+        <button
+          onClick={onToggle}
+          title="Collapse panel"
+          className="w-5 h-5 flex items-center justify-center rounded text-[var(--text-muted)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-hover)]"
+        >
+          <PanelLeftClose size={12} />
+        </button>
+      </div>
+
+      <Section label="Quick Access" items={quickAccess}    activePath={activePath} onNavigate={(p) => navigate(paneId, p)} />
+      <Section label="Favorites"    items={favoriteItems}  activePath={activePath} onNavigate={(p) => navigate(paneId, p)} defaultOpen={favoriteItems.length > 0} />
+
+      {/* Drives */}
+      <div className="mb-1">
+        <div className="flex items-center gap-1 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wider text-[var(--text-muted)]">
+          <ChevronDown size={9} /> Drives
+        </div>
+        <div className="space-y-px px-0.5">
+          {drives.map((d) => (
+            <div key={d.path} className="flex items-center gap-0.5">
+              <button
+                onClick={() => navigate(paneId, d.path)}
+                title={d.label ? `${d.label} (${d.name})` : d.name}
+                className={cn(
+                  "flex-1 flex items-center gap-1.5 px-2 py-0.5 rounded text-[11px] transition-colors text-left",
+                  activePath === d.path
+                    ? "bg-[var(--bg-selected)] text-[var(--text-primary)]"
+                    : "text-[var(--text-secondary)] hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)]"
+                )}
+              >
+                <HardDrive size={12} className="text-[var(--text-muted)] shrink-0" />
+                <span className="truncate flex-1">{d.label ? `${d.label} (${d.name})` : d.name}</span>
+                {d.totalSpace > 0 && (
+                  <span className="text-[10px] text-[var(--text-muted)] shrink-0">{formatSize(d.freeSpace)}</span>
+                )}
+              </button>
+              {d.driveType === "Removable" && (
+                <button
+                  onClick={() => fs.ejectDrive(d.path).then(() => useStore.getState().loadDrives()).catch(() => {})}
+                  title={`Eject ${d.name}`}
+                  className="shrink-0 p-0.5 rounded text-[var(--text-muted)] hover:text-[var(--danger)] hover:bg-[var(--bg-hover)]"
+                >
+                  <LogOut size={10} />
+                </button>
+              )}
+            </div>
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+}

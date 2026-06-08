@@ -1,11 +1,11 @@
 {
-  "version": "1.0.17",
-  "notes": "v1.0.17 — Independent split pane navigation\n\n• Each split pane now has its own navigation bar (back, forward, up, breadcrumb)\n• Fixed panes swapping positions when clicking between them\n• Navigate to different folders in each pane independently",
-  "pub_date": "2026-06-09T00:00:00Z",
+  "version": "1.0.18",
+  "notes": "v1.0.18 — Quick Access & Drives panel in each split pane\n\n• Each split pane now has its own Quick Access, Favorites, and Drives sidebar\n• Click any item to navigate that specific pane independently\n• Collapse/expand the panel with the toggle button",
+  "pub_date": "2026-06-09T01:00:00Z",
   "platforms": {
     "windows-x86_64": {
-      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVRMkVJNWlYTjdvZlMvSnJOdnh1VjJVRTVDSXA5UFpFUFArMHZ5dnVTQk55MlJxWDZsa2hjZUk1bCtSa1lJVE5TMi9rNEx5WCtvWHZScnlCbTF4U0k5VVg3c043TVgzVGd3PQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzgwOTI2NDg4CWZpbGU6Tm92YSBFeHBsb3Jlcl8xLjAuMTdfeDY0LXNldHVwLmV4ZQo4TEpReW9oTWFsMURWRHhyRHhNMGV0YVc2TVFQZC9CUFkxM1F3bVpXZDcvaHRlZkZWUjR1UEhWcjMrbjVGUi9NWVNNd1g3Vk5PM1NiQ3d2UFJnS21Cdz09Cg==",
-      "url": "https://github.com/krbxDev/nova-explorer/releases/download/v1.0.17/Nova.Explorer_1.0.17_x64-setup.exe"
+      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVRMkVJNWlYTjdvZmNtNThZUzY5bERtRXcxdjcvSzk1aUlxd1I1cmRJR0ZaT1k3cTFlbjhjM01BVlJSMUdQNkxsU2xQNEJua3pJdXZWYmVhRTFQakE4S3FVSFFaWjIxOHdJPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzgwOTI2OTc0CWZpbGU6Tm92YSBFeHBsb3Jlcl8xLjAuMThfeDY0LXNldHVwLmV4ZQprS0tTUnMyczZlYkxUZENIaHpJa2xVYWxKajdhZnV0RFpJN1gyM1k2T3QwSjNjR0VRdzF2YjZNOU5PeFN1V3lKazI0MGhtTnNIcjVNMDh5YjNNVktCdz09Cg==",
+      "url": "https://github.com/krbxDev/nova-explorer/releases/download/v1.0.18/Nova.Explorer_1.0.18_x64-setup.exe"
     }
   }
 }

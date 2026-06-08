@@ -1,5 +1,6 @@
 import { useState, useCallback, useEffect, useMemo, useRef } from "react";
 import { Loader2, AlertCircle, Search, X, ChevronLeft, ChevronRight, ChevronUp } from "lucide-react";
+import { PaneSidebar } from "../sidebar/PaneSidebar";
 import { listen } from "@tauri-apps/api/event";
 import { useStore } from "../../store";
 import { fs } from "../../lib/invoke";
@@ -25,6 +26,7 @@ export function FilePane({ paneId, showNavBar }: Props) {
   const [ctxMenu, setCtxMenu] = useState<CtxMenuState | null>(null);
   const [localSearch, setLocalSearch] = useState("");
   const [dropTarget, setDropTarget] = useState(false);
+  const [paneSidebarCollapsed, setPaneSidebarCollapsed] = useState(false);
   const isActive = activePaneId === paneId;
   const containerRef = useRef<HTMLDivElement>(null);
 
@@ -496,6 +498,19 @@ export function FilePane({ paneId, showNavBar }: Props) {
         </div>
       )}
 
+      {/* Body: sidebar (split mode only) + content column */}
+      <div className="flex flex-1 overflow-hidden min-h-0">
+        {showNavBar && (
+          <PaneSidebar
+            paneId={paneId}
+            collapsed={paneSidebarCollapsed}
+            onToggle={() => setPaneSidebarCollapsed((v) => !v)}
+          />
+        )}
+
+        {/* Content column */}
+        <div className="flex flex-col flex-1 overflow-hidden min-w-0">
+
       {/* Archive banner */}
       {pane.isArchive && pane.archivePath && (
         <div className="flex items-center gap-2 px-3 h-7 bg-[var(--accent-dim)] border-b border-[var(--accent)]/30 shrink-0">
@@ -628,6 +643,9 @@ export function FilePane({ paneId, showNavBar }: Props) {
           onClose={() => setCtxMenu(null)}
         />
       )}
+
+        </div>{/* end content column */}
+      </div>{/* end body flex row */}
     </div>
   );
 }
