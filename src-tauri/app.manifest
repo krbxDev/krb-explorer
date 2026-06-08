@@ -6,7 +6,7 @@
     version="1.0.8.0"
     processorArchitecture="amd64"
   />
-  <description>Nova Explorer</description>
+  <description>KRB Explorer</description>
   <trustInfo xmlns="urn:schemas-microsoft-com:asm.v2">
     <security>
       <requestedPrivileges>

@@ -106,7 +106,7 @@ export function UpdateChecker({ silent = false, autoCheck = false, onClose }: Pr
             <div className="text-center py-2">
               <CheckCircle size={32} className="text-[var(--success)] mx-auto mb-3" />
               <p className="text-sm font-medium text-[var(--text-primary)]">You're up to date!</p>
-              <p className="text-xs text-[var(--text-muted)] mt-1">Nova Explorer is running the latest version.</p>
+              <p className="text-xs text-[var(--text-muted)] mt-1">KRB Explorer is running the latest version.</p>
               {onClose && (
                 <button onClick={onClose}
                   className="mt-4 px-4 py-1.5 text-xs border border-[var(--border)] rounded hover:bg-[var(--bg-hover)] text-[var(--text-secondary)] transition-colors">
@@ -124,7 +124,7 @@ export function UpdateChecker({ silent = false, autoCheck = false, onClose }: Pr
                 </div>
                 <div>
                   <p className="text-sm font-semibold text-[var(--text-primary)]">
-                    Nova Explorer {state.version} is available
+                    KRB Explorer {state.version} is available
                   </p>
                   <p className="text-xs text-[var(--text-muted)] mt-0.5">
                     A new version is ready to download and install.
@@ -174,7 +174,7 @@ export function UpdateChecker({ silent = false, autoCheck = false, onClose }: Pr
               <CheckCircle size={32} className="text-[var(--success)] mx-auto mb-3" />
               <p className="text-sm font-semibold text-[var(--text-primary)]">Update ready to install</p>
               <p className="text-xs text-[var(--text-muted)] mt-1 mb-4">
-                Nova Explorer will restart to apply the update.
+                KRB Explorer will restart to apply the update.
               </p>
               <button onClick={() => relaunch()}
                 className="px-4 py-2 bg-[var(--accent)] text-white text-sm rounded hover:bg-[var(--accent-hover)] transition-colors">

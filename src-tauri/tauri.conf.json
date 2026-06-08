@@ -1,7 +1,7 @@
 {
-  "productName": "Nova Explorer",
-  "version": "1.0.19",
-  "identifier": "com.nova-explorer.app",
+  "productName": "KRB Explorer",
+  "version": "1.0.20",
+  "identifier": "com.krb-explorer.app",
   "build": {
     "beforeDevCommand": "npm run dev",
     "beforeBuildCommand": "npm run build",
@@ -12,7 +12,7 @@
     "withGlobalTauri": true,
     "windows": [
       {
-        "title": "Nova Explorer",
+        "title": "KRB Explorer",
         "width": 1280,
         "height": 800,
         "minWidth": 800,
@@ -32,7 +32,7 @@
     "updater": {
       "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDdERThERTVDNjI4RTEwMzYKUldRMkVJNWlYTjdvZlRQZlpqNWltR1g0N2ZtRnlMM3ZhUEt5TzBYaEJYbTE5YStkT2tqblZsczIK",
       "endpoints": [
-        "https://raw.githubusercontent.com/krbxDev/nova-explorer/master/latest.json"
+        "https://raw.githubusercontent.com/krbxDev/krb-explorer/master/latest.json"
       ]
     }
   },
@@ -46,7 +46,7 @@
       "icons/icon.icns",
       "icons/icon.ico"
     ],
-    "publisher": "Nova Explorer",
+    "publisher": "KRB Explorer",
     "copyright": "Copyright Â© 2025 Nova Explorer",
     "category": "Utility",
     "shortDescription": "A fast, modern Windows file manager",

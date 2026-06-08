@@ -1,16 +1,16 @@
 [package]
-name = "nova-explorer"
+name = "krb-explorer"
 version = "0.1.0"
-description = "Nova Explorer - A modern Windows file manager"
+description = "KRB Explorer - A modern Windows file manager"
 authors = []
 edition = "2021"
 
 [lib]
-name = "nova_explorer_lib"
+name = "krb_explorer_lib"
 crate-type = ["staticlib", "cdylib", "rlib"]
 
 [[bin]]
-name = "nova-explorer"
+name = "krb-explorer"
 path = "src/main.rs"
 
 [build-dependencies]

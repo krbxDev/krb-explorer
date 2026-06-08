@@ -17,7 +17,7 @@ export function TitleBar() {
         <div className="w-5 h-5 rounded bg-[var(--accent)] flex items-center justify-center">
           <span className="text-white text-[10px] font-bold">N</span>
         </div>
-        <span className="text-[var(--text-secondary)] text-xs font-medium">Nova Explorer</span>
+        <span className="text-[var(--text-secondary)] text-xs font-medium">KRB Explorer</span>
       </div>
 
       {/* Search bar */}

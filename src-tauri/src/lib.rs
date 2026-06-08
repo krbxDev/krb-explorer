@@ -98,5 +98,5 @@ pub fn run() {
             commands::pty::pty_kill,
         ])
         .run(tauri::generate_context!())
-        .expect("error while running Nova Explorer");
+        .expect("error while running KRB Explorer");
 }
