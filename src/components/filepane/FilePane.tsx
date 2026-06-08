@@ -166,8 +166,24 @@ export function FilePane({ paneId, showNavBar }: Props) {
     if (!entry) {
       return [
         {
-          id: "new-folder", label: "New Folder", shortcut: "Ctrl+Shift+N",
+          id: "new-folder", label: "New → Folder", shortcut: "Ctrl+Shift+N",
           action: startNewFolder,
+        },
+        {
+          id: "new-text-file", label: "New → Text Document",
+          action: async () => {
+            if (!pane) return;
+            const base = pane.path.replace(/[\\/]+$/, "");
+            let name = "New Text Document.txt";
+            let i = 1;
+            while (true) {
+              try { await fs.getFileInfo(base + "\\" + name); name = `New Text Document (${i++}).txt`; } catch { break; }
+            }
+            await fs.createFile(base + "\\" + name).catch(() => {});
+            await refresh(paneId);
+            setSelection(paneId, [base + "\\" + name]);
+            setTimeout(() => window.dispatchEvent(new CustomEvent("nova:startrename", { detail: { path: base + "\\" + name } })), 80);
+          },
         },
         { id: "sep-new", label: "", separator: true, action: () => {} },
         {
@@ -209,6 +225,18 @@ export function FilePane({ paneId, showNavBar }: Props) {
     const isImage = IMAGE_EXTS.has(ext);
     const isArchive = ARCHIVE_EXTS.has(ext);
     const isExe = ["exe", "msi", "bat", "cmd"].includes(ext);
+
+    const isDriveRoot = /^[A-Za-z]:[/\\]?$/.test(entry.path);
+
+    const openInNewWindow = () => {
+      import("@tauri-apps/api/webviewWindow").then(({ WebviewWindow }) => {
+        new WebviewWindow(`window-${Date.now()}`, {
+          url: `/?path=${encodeURIComponent(entry.path)}`,
+          title: "KRB Explorer",
+          width: 1100, height: 700,
+        });
+      }).catch(() => {});
+    };
 
     const actions: ContextMenuAction[] = [
       {
@@ -256,10 +284,73 @@ export function FilePane({ paneId, showNavBar }: Props) {
         action: () => useStore.getState().openTab(entry.path),
       },
       {
+        id: "open-new-window", label: "Open in new window",
+        action: openInNewWindow,
+      },
+      {
         id: "preview", label: "Show in preview panel",
         action: () => openPreview(entry.path),
       },
       { id: "sep0", label: "", separator: true, action: () => {} },
+    );
+
+    // Pin to Quick access (= Add to Favorites)
+    actions.push({
+      id: "pin-quick-access", label: "Pin to Quick access",
+      action: () => addFavorite(entry.path, entry.name),
+    });
+
+    // Give access to (share dialog)
+    actions.push({
+      id: "give-access", label: "Give access to",
+      action: () => fs.openShareDialog(entry.path).catch(() => {}),
+    });
+
+    // Restore previous versions
+    actions.push({
+      id: "prev-versions", label: "Restore previous versions",
+      action: () => fs.showPreviousVersions(entry.path).catch(() => {}),
+    });
+
+    // Scan for viruses
+    actions.push({
+      id: "scan-virus", label: "Scan with Windows Defender",
+      action: () => fs.scanWithDefender(targets).catch(() => {}),
+    });
+
+    // Pin to Start
+    actions.push({
+      id: "pin-start", label: "Pin to Start",
+      action: () => fs.pinToStart(entry.path).catch(() => {}),
+    });
+
+    // Format (drives only)
+    if (isDriveRoot) {
+      actions.push({
+        id: "format-drive", label: "Format…",
+        action: () => fs.formatDrive(entry.path).catch(() => {}),
+      });
+    }
+
+    actions.push(
+      { id: "sep-tools", label: "", separator: true, action: () => {} },
+    );
+
+    if (entry.isDir) {
+      actions.push(
+        {
+          id: "terminal", label: "Open in Terminal",
+          action: () => fs.openTerminalAt(entry.path),
+        },
+        {
+          id: "vscode", label: "Open with Visual Studio Code",
+          action: () => fs.openInVscode(entry.path),
+        },
+      );
+    }
+
+    actions.push(
+      { id: "sep1", label: "", separator: true, action: () => {} },
       {
         id: "copy", label: "Copy", shortcut: "Ctrl+C",
         action: () => setClipboard(targets, "copy"),
@@ -273,16 +364,11 @@ export function FilePane({ paneId, showNavBar }: Props) {
         disabled: !clipboard,
         action: () => pasteClipboard(paneId),
       },
-      { id: "sep1", label: "", separator: true, action: () => {} },
-      {
-        id: "copy-path", label: "Copy as path",
-        action: () => navigator.clipboard.writeText(targets.join("\n")),
-      },
+      { id: "sep2", label: "", separator: true, action: () => {} },
       {
         id: "rename", label: "Rename", shortcut: "F2",
         disabled: targets.length > 1,
         action: () => {
-          // Trigger inline rename via event
           window.dispatchEvent(new CustomEvent("nova:startrename", { detail: { path: entry.path } }));
         },
       },
@@ -291,13 +377,38 @@ export function FilePane({ paneId, showNavBar }: Props) {
         disabled: targets.length < 2,
         action: () => { setSelection(paneId, targets); toggleBulkRename(); },
       },
-      { id: "sep2", label: "", separator: true, action: () => {} },
+      { id: "sep-new", label: "", separator: true, action: () => {} },
+    );
+
+    // New submenu items
+    actions.push(
+      {
+        id: "new-folder-here", label: "New → Folder",
+        action: startNewFolder,
+      },
+      {
+        id: "new-text-file", label: "New → Text Document",
+        action: async () => {
+          if (!pane) return;
+          const base = pane.path.replace(/[\\/]+$/, "");
+          let name = "New Text Document.txt";
+          let i = 1;
+          // avoid collision
+          while (true) {
+            try { await fs.getFileInfo(base + "\\" + name); name = `New Text Document (${i++}).txt`; } catch { break; }
+          }
+          await fs.createFile(base + "\\" + name).catch(() => {});
+          await refresh(paneId);
+          setSelection(paneId, [base + "\\" + name]);
+          setTimeout(() => window.dispatchEvent(new CustomEvent("nova:startrename", { detail: { path: base + "\\" + name } })), 80);
+        },
+      },
     );
 
     // Create shortcut
     if (!entry.path.endsWith(".lnk")) {
       actions.push({
-        id: "create-shortcut", label: "Create shortcut",
+        id: "create-shortcut", label: "New → Shortcut",
         action: async () => {
           const shortcutPath = entry.path.replace(/[\\/][^\\/]+$/, "") + "\\" + entry.name + ".lnk";
           await fs.createShortcut(entry.path, shortcutPath).catch(() => {});
@@ -305,6 +416,14 @@ export function FilePane({ paneId, showNavBar }: Props) {
         },
       });
     }
+
+    actions.push({ id: "sep-more", label: "", separator: true, action: () => {} });
+
+    // Copy as path
+    actions.push({
+      id: "copy-path", label: "Copy as path",
+      action: () => navigator.clipboard.writeText(targets.join("\n")),
+    });
 
     // Compress to ZIP
     actions.push({
@@ -357,27 +476,6 @@ export function FilePane({ paneId, showNavBar }: Props) {
         id: "print", label: "Print",
         action: () => fs.printFile(entry.path).catch(() => {}),
       });
-    }
-
-    actions.push(
-      { id: "sep-fav", label: "", separator: true, action: () => {} },
-      {
-        id: "fav", label: "Add to Favorites",
-        action: () => addFavorite(entry.path, entry.name),
-      },
-    );
-
-    if (entry.isDir) {
-      actions.push(
-        {
-          id: "vscode", label: "Open in VS Code",
-          action: () => fs.openInVscode(entry.path),
-        },
-        {
-          id: "terminal", label: "Open terminal here",
-          action: () => fs.openTerminalAt(entry.path),
-        },
-      );
     }
 
     actions.push(

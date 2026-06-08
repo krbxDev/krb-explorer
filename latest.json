@@ -1,11 +1,11 @@
 {
-  "version": "1.0.25",
-  "notes": "v1.0.25 — Extended context menus on sidebar panels\n\n• Open in new window — opens path in a fresh KRB Explorer window\n• New Folder here — navigates to the folder and creates a new folder\n• Properties — shows file/folder properties dialog\n• Rename — rename a favorite's display name\n• Works in both the main sidebar and each split pane's sidebar panel",
-  "pub_date": "2026-06-08T12:00:00Z",
+  "version": "1.0.26",
+  "notes": "v1.0.26 — Full Windows Explorer context menu parity\n\n• Open in new window — opens any file/folder in a new KRB Explorer window\n• Pin to Quick access — same as Add to Favorites\n• Give access to — opens Windows sharing wizard\n• Restore previous versions — opens Windows Previous Versions dialog\n• Scan with Windows Defender — scans selected items for viruses\n• Pin to Start — pins folder/file to the Windows Start menu\n• Format… — appears for drive roots, opens Windows format dialog\n• New → Text Document — creates a new .txt file inline with rename\n• New → Shortcut — creates a .lnk shortcut for any item\n• New → Folder, New → Text Document also in empty-space right-click menu\n• Open in Terminal, Open with VS Code grouped together\n• All previous actions preserved",
+  "pub_date": "2026-06-08T14:00:00Z",
   "platforms": {
     "windows-x86_64": {
-      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVRMkVJNWlYTjdvZllVeDQ0cEdKQkpSWVFPd2ttdWdRUFlrdzNBalluL29uVTRGM2h6K2R0UTZqYmFFMzZsbVpiRVpjWE81MkpaaVpJelB0ZWJDTmJSQzRnY1F4Z1lFbXd3PQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzgwOTMxNjY4CWZpbGU6S1JCIEV4cGxvcmVyXzEuMC4yNV94NjQtc2V0dXAuZXhlClBMQ2d0N0hrUnFyR0VBU1ltZm51ODFHczNIam0yazdlOXdjaU1lYnBLUkNtNFVuNFRYN2xIWFV4WTExWU5La3VpU0FkaGp2UXpQbjVPajd1d1E1Q0F3PT0K",
-      "url": "https://github.com/krbxDev/krb-explorer/releases/download/v1.0.25/KRB.Explorer_1.0.25_x64-setup.exe"
+      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVRMkVJNWlYTjdvZmZ0T0RaVmR2amY5Y3UyYWJmcm90SEtxZzU3czhyVWpyZGZ1YXp4SVJ2UHlZTDFZRmVNQmJGUEg2UTRDNmNXck5jN3hEK3NkQlhoTDFBRFF4UnpweWdFPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzgwOTMyNzUzCWZpbGU6S1JCIEV4cGxvcmVyXzEuMC4yNl94NjQtc2V0dXAuZXhlCmxNOWZzcEd4Vms2ZG5DbzFKanZjYmNWaERXazVPZ2JpcElYNDVXWm1XR2ZpTVQ1eWJhZnA0eXp0K0RTdE9sM0F0aWNFV09GbEVTTmFHdmhEN0JrTERnPT0K",
+      "url": "https://github.com/krbxDev/krb-explorer/releases/download/v1.0.26/KRB.Explorer_1.0.26_x64-setup.exe"
     }
   }
 }

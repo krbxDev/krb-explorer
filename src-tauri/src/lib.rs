@@ -68,6 +68,12 @@ pub fn run() {
             commands::fs::open_with_app,
             commands::fs::eject_drive,
             commands::fs::set_file_attributes,
+            commands::fs::create_file,
+            commands::fs::open_share_dialog,
+            commands::fs::scan_with_defender,
+            commands::fs::show_previous_versions,
+            commands::fs::pin_to_start,
+            commands::fs::format_drive,
             // Search
             commands::search::search_directory,
             commands::search::index_directory,

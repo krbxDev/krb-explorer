@@ -1193,3 +1193,161 @@ fn build_disk_tree(path: &str, max_depth: u32, current_depth: u32) -> Result<Dis
     let size: u64 = children.iter().map(|c| c.size).sum();
     Ok(DiskUsageEntry { name, path: path.to_string(), size, children })
 }
+
+// ─── Create empty file ───────────────────────────────────────────────────────
+
+#[command]
+pub async fn create_file(path: String) -> Result<(), String> {
+    tokio::fs::File::create(&path).await
+        .map(|_| ())
+        .map_err(|e| e.to_string())
+}
+
+// ─── Open share / Give access to dialog ─────────────────────────────────────
+
+#[command]
+pub async fn open_share_dialog(path: String) -> Result<(), String> {
+    tokio::task::spawn_blocking(move || {
+        #[cfg(windows)]
+        {
+            use std::ffi::OsStr;
+            use std::os::windows::ffi::OsStrExt;
+            let path_wide: Vec<u16> = OsStr::new(&path).encode_wide().chain(std::iter::once(0)).collect();
+            let verb: Vec<u16> = "share\0".encode_utf16().collect();
+            let result = unsafe {
+                winapi::um::shellapi::ShellExecuteW(
+                    std::ptr::null_mut(), verb.as_ptr(), path_wide.as_ptr(),
+                    std::ptr::null(), std::ptr::null(), winapi::um::winuser::SW_SHOWNORMAL,
+                )
+            };
+            if result as usize <= 32 { Err(format!("ShellExecuteW (share) failed: {}", result as usize)) } else { Ok(()) }
+        }
+        #[cfg(not(windows))]
+        Err("Share dialog not supported on this platform".to_string())
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+
+// ─── Scan with Windows Defender ──────────────────────────────────────────────
+
+#[command]
+pub async fn scan_with_defender(paths: Vec<String>) -> Result<(), String> {
+    tokio::task::spawn_blocking(move || {
+        #[cfg(windows)]
+        {
+            let paths_arg = paths.iter()
+                .map(|p| format!("\"{}\"", p.replace('"', "\"\"")))
+                .collect::<Vec<_>>()
+                .join(",");
+            // Try MpCmdRun.exe; fall back to opening Windows Security
+            let script = format!(
+                r#"$mp = 'C:\Program Files\Windows Defender\MpCmdRun.exe';
+if (Test-Path $mp) {{
+    foreach ($p in @({})) {{ Start-Process $mp -ArgumentList "-Scan -ScanType 3 -File `"$p`"" -WindowStyle Normal }}
+}} else {{ Start-Process 'windowsdefender:' }}"#,
+                paths_arg
+            );
+            std::process::Command::new("powershell")
+                .args(["-NoProfile", "-WindowStyle", "Hidden", "-Command", &script])
+                .spawn()
+                .map_err(|e| e.to_string())?;
+            Ok(())
+        }
+        #[cfg(not(windows))]
+        Err("Defender scan not supported on this platform".to_string())
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+
+// ─── Restore / Show previous versions ───────────────────────────────────────
+
+#[command]
+pub async fn show_previous_versions(path: String) -> Result<(), String> {
+    tokio::task::spawn_blocking(move || {
+        #[cfg(windows)]
+        {
+            // Use SHObjectProperties via PowerShell's Add-Type to open Previous Versions tab
+            let escaped = path.replace('\'', "''");
+            let script = format!(
+                r#"Add-Type -TypeDefinition @'
+using System;
+using System.Runtime.InteropServices;
+public class KrbShell {{
+    [DllImport("shell32.dll", CharSet=CharSet.Unicode)]
+    public static extern bool SHObjectProperties(IntPtr hwnd, uint dwType, string lpObject, string lpPage);
+}}
+'@
+[KrbShell]::SHObjectProperties([IntPtr]::Zero, 2, '{}', 'Previous Versions')"#,
+                escaped
+            );
+            std::process::Command::new("powershell")
+                .args(["-NoProfile", "-Command", &script])
+                .spawn()
+                .map_err(|e| e.to_string())?;
+            Ok(())
+        }
+        #[cfg(not(windows))]
+        Err("Previous versions not supported on this platform".to_string())
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+
+// ─── Pin to Start ────────────────────────────────────────────────────────────
+
+#[command]
+pub async fn pin_to_start(path: String) -> Result<(), String> {
+    tokio::task::spawn_blocking(move || {
+        #[cfg(windows)]
+        {
+            let escaped = path.replace('\'', "''");
+            // Use Shell.Application COM verb "pintostartscreen"
+            let script = format!(
+                r#"$sh = New-Object -ComObject Shell.Application
+$parent = Split-Path '{}' -Parent
+$name   = Split-Path '{}' -Leaf
+$fld = $sh.NameSpace($parent)
+if ($fld) {{ $item = $fld.ParseName($name); if ($item) {{ $item.InvokeVerb('pintostartscreen') }} }}"#,
+                escaped, escaped
+            );
+            std::process::Command::new("powershell")
+                .args(["-NoProfile", "-WindowStyle", "Hidden", "-Command", &script])
+                .spawn()
+                .map_err(|e| e.to_string())?;
+            Ok(())
+        }
+        #[cfg(not(windows))]
+        Err("Pin to Start not supported on this platform".to_string())
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+
+// ─── Format drive ────────────────────────────────────────────────────────────
+
+#[command]
+pub async fn format_drive(path: String) -> Result<(), String> {
+    tokio::task::spawn_blocking(move || {
+        #[cfg(windows)]
+        {
+            // Extract drive letter from path (e.g. "C:\" → "C")
+            let drive_letter = path.chars().next().unwrap_or('C').to_uppercase().next().unwrap_or('C');
+            let script = format!(
+                r#"$shell = New-Object -ComObject Shell.Application
+$shell.NameSpace(17).ParseName('{}:').InvokeVerb('format')"#,
+                drive_letter
+            );
+            std::process::Command::new("powershell")
+                .args(["-NoProfile", "-WindowStyle", "Hidden", "-Command", &script])
+                .spawn()
+                .map_err(|e| e.to_string())?;
+            Ok(())
+        }
+        #[cfg(not(windows))]
+        Err("Format drive not supported on this platform".to_string())
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}

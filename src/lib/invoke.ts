@@ -35,6 +35,12 @@ export const fs = {
   openWithApp: (path: string, appPath: string) => invoke<void>("open_with_app", { path, appPath }),
   ejectDrive: (path: string) => invoke<void>("eject_drive", { path }),
   setFileAttributes: (path: string, readonly: boolean, hidden: boolean) => invoke<void>("set_file_attributes", { path, readonly, hidden }),
+  createFile: (path: string) => invoke<void>("create_file", { path }),
+  openShareDialog: (path: string) => invoke<void>("open_share_dialog", { path }),
+  scanWithDefender: (paths: string[]) => invoke<void>("scan_with_defender", { paths }),
+  showPreviousVersions: (path: string) => invoke<void>("show_previous_versions", { path }),
+  pinToStart: (path: string) => invoke<void>("pin_to_start", { path }),
+  formatDrive: (path: string) => invoke<void>("format_drive", { path }),
 };
 
 export const search = {
