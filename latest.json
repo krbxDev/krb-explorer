@@ -1,11 +1,14 @@
-{
-  "version": "1.0.28",
-  "notes": "v1.0.28 - Remove built-in terminal; auto-cleanup old releases on publish\n\n- Removed the built-in terminal panel (toolbar button and keyboard shortcut gone)\n- GitHub: only the latest release is kept, all previous removed automatically on each publish\n- release.ps1 script added for automated build, sign, and release workflow",
-  "pub_date": "2026-06-08T15:59:03Z",
+﻿{
+  "version": "1.0.30",
+  "notes": "v1.0.29 - Fix software update check
+
+- Updater now fetches latest.json from GitHub release assets instead of raw CDN
+- Eliminates BOM and CDN caching issues that caused update check to fail",
+  "pub_date": "2026-06-08T16:10:34Z",
   "platforms": {
     "windows-x86_64": {
-      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVRMkVJNWlYTjdvZmU5S2VrKzFKNThUdTdwWlplVXNrYnZGV1NpK0dlMno3bWsrT2FRVjBXOGVxRGhLZkRJSGdWZ05WQjlCVVNoZ0FOcWNUWnUrWFFibERPMTJxQjZheGdFPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzgwOTM0MzQzCWZpbGU6S1JCIEV4cGxvcmVyXzEuMC4yOF94NjQtc2V0dXAuZXhlCmMxTVVHOWdybmZzTVYxQThJNlhUd2RibU9tR0luWGQrNGRUUTZVNEpMdjhrYjJjbUx4bUx0V2gwVTgzWGJsOUw4NXplMGl5aEVXd1AzV3RpbjhXekNnPT0K",
-      "url": "https://github.com/krbxDev/krb-explorer/releases/download/v1.0.28/KRB.Explorer_1.0.28_x64-setup.exe"
+      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVRMkVJNWlYTjdvZmFzSGFzcE1Fbkd1dithdzB0Zm1jZFBCZUdsNW1zNEVzajNpQ21QcFZVQnA0VW5iN0taa2VWY1ZBUllJaTBhVlZSMk4xeXh1cnRodjBFN2RHYkZyOFF3PQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzgwOTM1MDM0CWZpbGU6S1JCIEV4cGxvcmVyXzEuMC4zMF94NjQtc2V0dXAuZXhlCmt0NlMycHFrUXRYWjFKbzJhby9JRjY4K0tUZ1lIZ21pMXlreVR0bVBleU54aWhxMnRwdjU0NzZlak1JUGpiM2VNdzNSUXNaeldNNHcrV1ZhclptR0F3PT0K",
+      "url": "https://github.com/krbxDev/krb-explorer/releases/download/v1.0.30/KRB.Explorer_1.0.30_x64-setup.exe"
     }
   }
 }
