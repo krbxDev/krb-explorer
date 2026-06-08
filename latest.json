@@ -1,11 +1,11 @@
 {
-  "version": "1.0.33",
-  "notes": "v2 advanced features: Miller columns, File Vault (AES-256), AI assistant, FTP/SFTP/S3 browser, indexed search (FTS5), copy queue, workspaces, activity log, permissions viewer, large files finder, file timeline, folder color coding, WSL integration, secure delete, compact mode, cloud sync detection and more",
-  "pub_date": "2026-06-08T23:03:35Z",
+  "version": "1.0.34",
+  "notes": "fix: WSL distro names rendering as garbled text (UTF-16 LE decode without BOM)",
+  "pub_date": "2026-06-08T23:14:51Z",
   "platforms": {
     "windows-x86_64": {
-      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVRMkVJNWlYTjdvZmV3UE5RQjlXNkdaOGYxQXdoemN3cG1VUlhwVkM1bWNQZGo2RjdKUjFaWC9aN3hlcGxzM0IwTXhyZTdiR3o3Ky95L3k3bHpHVlRVRTYrRE1PdUlPNndnPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzgwOTU5ODE1CWZpbGU6S1JCIEV4cGxvcmVyXzEuMC4zM194NjQtc2V0dXAuZXhlClZrclJpdnNqZ1RsSnRraitXSEgwelQwZHpJZHhzdkNVdS9ad1g1Q3JnWUNrRzVsSmFrZEpCWno4STc4Umh6enY1enBhdnZIQzg2VFcrWjdrMU44NkNnPT0K",
-      "url": "https://github.com/krbxDev/krb-explorer/releases/download/v1.0.33/KRB.Explorer_1.0.33_x64-setup.exe"
+      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVRMkVJNWlYTjdvZlJpbnlZaWQvMkpSejVWeEpRaFE1OGxSY3lLNFBUei9LbENHRTlvMWJtMzVkR2VOdzBQQ0U2ajA1MVpwQS9SQWpPTzROdXYyUVowVlI5TEk4TnlMMHdVPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzgwOTYwNDkxCWZpbGU6S1JCIEV4cGxvcmVyXzEuMC4zNF94NjQtc2V0dXAuZXhlCllmVTdtUlZ6SG85bTd2SngyVDl3QzN1STBWQzg4NHpxOUFDVUFPVnpEZ09HU3ZOYTBpdHJBaWNNbVkyTXI1UDZDOWFud1hsbnJwWmJXU0NsejhnTkN3PT0K",
+      "url": "https://github.com/krbxDev/krb-explorer/releases/download/v1.0.34/KRB.Explorer_1.0.34_x64-setup.exe"
     }
   }
 }
