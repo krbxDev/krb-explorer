@@ -1,11 +1,11 @@
 {
-  "version": "1.0.18",
-  "notes": "v1.0.18 — Quick Access & Drives panel in each split pane\n\n• Each split pane now has its own Quick Access, Favorites, and Drives sidebar\n• Click any item to navigate that specific pane independently\n• Collapse/expand the panel with the toggle button",
-  "pub_date": "2026-06-09T01:00:00Z",
+  "version": "1.0.19",
+  "notes": "v1.0.19 — Hide main sidebar in split mode\n\n• Main sidebar is now hidden when split view is active\n• Each split pane's own Quick Access/Drives panel provides navigation instead",
+  "pub_date": "2026-06-09T01:30:00Z",
   "platforms": {
     "windows-x86_64": {
-      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVRMkVJNWlYTjdvZmNtNThZUzY5bERtRXcxdjcvSzk1aUlxd1I1cmRJR0ZaT1k3cTFlbjhjM01BVlJSMUdQNkxsU2xQNEJua3pJdXZWYmVhRTFQakE4S3FVSFFaWjIxOHdJPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzgwOTI2OTc0CWZpbGU6Tm92YSBFeHBsb3Jlcl8xLjAuMThfeDY0LXNldHVwLmV4ZQprS0tTUnMyczZlYkxUZENIaHpJa2xVYWxKajdhZnV0RFpJN1gyM1k2T3QwSjNjR0VRdzF2YjZNOU5PeFN1V3lKazI0MGhtTnNIcjVNMDh5YjNNVktCdz09Cg==",
-      "url": "https://github.com/krbxDev/nova-explorer/releases/download/v1.0.18/Nova.Explorer_1.0.18_x64-setup.exe"
+      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVRMkVJNWlYTjdvZldEeWdLaUFzMWFORjcxanY0bk9teVNyL0IrZXVqRDA4cXBIYXZKSk1XOE5URkN0bEZ2QjdrS0M2dG9zWjUvS0pGbWVxQVVMdi9mbjRweURVeWJhdHc4PQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzgwOTI3NDc1CWZpbGU6Tm92YSBFeHBsb3Jlcl8xLjAuMTlfeDY0LXNldHVwLmV4ZQpoNVIzN2p3MWFVT0czVmsycUhyZWtSR2NJY2xKbUh0U3I5QkhETC90eDZnN2ZJcXdtWmRsLzVxZmlnMlA1WXVNQTlLSHNSdm1JaUYzSGV3ZnBqbFhBZz09Cg==",
+      "url": "https://github.com/krbxDev/nova-explorer/releases/download/v1.0.19/Nova.Explorer_1.0.19_x64-setup.exe"
     }
   }
 }

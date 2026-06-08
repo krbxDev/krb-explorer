@@ -54,7 +54,7 @@ export function App() {
       <Toolbar />
 
       <div className="flex flex-1 overflow-hidden">
-        {!sidebarCollapsed && <Sidebar />}
+        {!sidebarCollapsed && splitMode === "none" && <Sidebar />}
 
         <div className={`flex flex-1 overflow-hidden ${splitMode === "vertical" ? "flex-col" : "flex-row"}`}>
           {splitMode === "none" && (
