@@ -1496,17 +1496,25 @@ pub async fn format_drive(path: String) -> Result<(), String> {
         {
             // Extract drive letter from path (e.g. "C:\" → "C")
             let drive_letter = path.chars().next().unwrap_or('C').to_uppercase().next().unwrap_or('C');
-            // Open the native Windows Format Drive dialog via Shell.Application.
-            // Must NOT use -WindowStyle Hidden — COM dialogs need a visible window
-            // context or they fail to render. The PowerShell console flashes
-            // briefly but the format dialog stays open until the user closes it.
+            // Convert drive letter to 0-based index (A=0, B=1, C=2 …) for SHFormatDrive
+            let drive_index = (drive_letter as u32).saturating_sub('A' as u32);
+            // Call SHFormatDrive via P/Invoke — this opens the standard Windows
+            // Format Drive dialog, the same one Explorer uses. Passing IntPtr.Zero
+            // as the hwnd is valid and shows the dialog as a top-level window.
             let script = format!(
-                r#"$shell = New-Object -ComObject Shell.Application
-$shell.NameSpace(17).ParseName('{}:').InvokeVerb('format')"#,
-                drive_letter
+                r#"Add-Type -TypeDefinition @'
+using System;
+using System.Runtime.InteropServices;
+public class Shell32 {{
+    [DllImport("shell32.dll")]
+    public static extern uint SHFormatDrive(IntPtr hwnd, uint drive, uint fmtID, uint options);
+}}
+'@
+[Shell32]::SHFormatDrive([IntPtr]::Zero, {}, 0xFFFF, 0)"#,
+                drive_index
             );
             std::process::Command::new("powershell")
-                .args(["-NoProfile", "-Command", &script])
+                .args(["-NoProfile", "-WindowStyle", "Hidden", "-Command", &script])
                 .spawn()
                 .map_err(|e| e.to_string())?;
             Ok(())
