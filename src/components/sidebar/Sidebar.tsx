@@ -286,7 +286,7 @@ export function Sidebar({ paneId: paneIdProp, width, onCollapse }: SidebarProps 
 
     // Format (drives only)
     if (isDriveRoot) {
-      actions.push({ id: "format-drive", label: "Format…", action: () => fs.formatDrive(item.path).catch(() => {}) });
+      actions.push({ id: "format-drive", label: "Format…", action: () => fs.formatDrive(item.path).catch((e: unknown) => alert(`Format failed: ${e}`)) });
     }
 
     if (type === "favorite") {

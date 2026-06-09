@@ -1496,13 +1496,17 @@ pub async fn format_drive(path: String) -> Result<(), String> {
         {
             // Extract drive letter from path (e.g. "C:\" → "C")
             let drive_letter = path.chars().next().unwrap_or('C').to_uppercase().next().unwrap_or('C');
+            // Open the native Windows Format Drive dialog via Shell.Application.
+            // Must NOT use -WindowStyle Hidden — COM dialogs need a visible window
+            // context or they fail to render. The PowerShell console flashes
+            // briefly but the format dialog stays open until the user closes it.
             let script = format!(
                 r#"$shell = New-Object -ComObject Shell.Application
 $shell.NameSpace(17).ParseName('{}:').InvokeVerb('format')"#,
                 drive_letter
             );
             std::process::Command::new("powershell")
-                .args(["-NoProfile", "-WindowStyle", "Hidden", "-Command", &script])
+                .args(["-NoProfile", "-Command", &script])
                 .spawn()
                 .map_err(|e| e.to_string())?;
             Ok(())

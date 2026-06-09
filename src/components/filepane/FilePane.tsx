@@ -365,7 +365,7 @@ export function FilePane({ paneId, showNavBar }: Props) {
     if (isDriveRoot) {
       actions.push({
         id: "format-drive", label: "Format…",
-        action: () => fs.formatDrive(entry.path).catch(() => {}),
+        action: () => fs.formatDrive(entry.path).catch((e: unknown) => alert(`Format failed: ${e}`)),
       });
     }
 
