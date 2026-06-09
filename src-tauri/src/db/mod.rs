@@ -41,6 +41,11 @@ impl Database {
         Ok(db)
     }
 
+    /// Provide raw access to the underlying connection for ad-hoc queries.
+    pub fn conn(&self) -> &Connection {
+        &self.conn
+    }
+
     fn init_schema(&self) -> Result<()> {
         self.conn.execute_batch("
             PRAGMA journal_mode=WAL;

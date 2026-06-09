@@ -178,3 +178,58 @@ export interface BookmarkedSearch {
   query: string;
   root: string;
 }
+
+export interface AclEntry {
+  identity: string;
+  rights: string;
+  access_type: string;
+}
+
+export interface ActivityEntry {
+  id: number;
+  timestamp: number;
+  operation: string;
+  paths: string[];
+  destination: string | null;
+}
+
+export interface WslDistro {
+  name: string;
+  home_path: string;
+}
+
+export interface CopyQueueItem {
+  id: string;
+  sources: string[];
+  destDir: string;
+  mode: 'copy' | 'move';
+  status: 'queued' | 'running' | 'paused' | 'done' | 'error';
+  filesDone: number;
+  filesTotal: number;
+  bytesDone: number;
+  bytesTotal: number;
+  currentFile: string;
+  error?: string;
+  speed?: number; // bytes/sec
+  startedAt?: number;
+}
+
+export interface Workspace {
+  id: string;
+  name: string;
+  splitMode: 'none' | 'horizontal' | 'vertical';
+  paths: string[];
+  createdAt: number;
+}
+
+export interface FtpConnection {
+  id: string;
+  label: string;
+  protocol: 'ftp' | 'sftp' | 's3';
+  host: string;
+  port: number;
+  username: string;
+  remotePath: string;
+}
+
+export type RowDensity = 'comfortable' | 'compact' | 'spacious';

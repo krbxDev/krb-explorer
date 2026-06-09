@@ -99,11 +99,23 @@ export function DetailsView({ paneId, entries, onOpen, onContextMenu, onRenameCo
 
   // Focused row index for keyboard navigation
   const [focusedIdx, setFocusedIdx] = useState(-1);
+  // BUG-027 FIX: track anchor by path so refresh doesn't stale the shift-click anchor
+  const anchorPathRef = useRef<string | null>(null);
 
   // Inline rename
   const [renamingPath, setRenamingPath] = useState<string | null>(null);
   const [renameValue, setRenameValue] = useState("");
   const renameInputRef = useRef<HTMLInputElement>(null);
+
+  // BUG-026 FIX: scroll tick forces re-render so lasso visual tracks scroll position
+  const [scrollTick, setScrollTick] = useState(0);
+  useEffect(() => {
+    const el = parentRef.current;
+    if (!el) return;
+    const onScroll = () => setScrollTick((t) => t + 1);
+    el.addEventListener("scroll", onScroll, { passive: true });
+    return () => el.removeEventListener("scroll", onScroll);
+  }, []);
 
   // Rubber-band selection
   const [lasso, setLasso] = useState<{ x1: number; y1: number; x2: number; y2: number } | null>(null);
@@ -263,15 +275,23 @@ export function DetailsView({ paneId, entries, onOpen, onContextMenu, onRenameCo
   }, [focusedIdx, entries, selection, paneId, renamingPath, setSelection, toggleSelection, onOpen, startRename]);
 
   const handleClick = useCallback((e: React.MouseEvent, entry: FileEntry, idx: number) => {
-    setFocusedIdx(idx);
     if (e.ctrlKey) {
       toggleSelection(paneId, entry.path);
+      setFocusedIdx(idx);
+      // don't update anchor on ctrl-click
     } else if (e.shiftKey && selection.size > 0) {
-      const anchor = focusedIdx >= 0 ? focusedIdx : 0;
+      // BUG-027 FIX: resolve anchor by path so a refresh doesn't stale the index
+      const anchorIdx = anchorPathRef.current
+        ? entries.findIndex((x) => x.path === anchorPathRef.current)
+        : focusedIdx;
+      const anchor = anchorIdx >= 0 ? anchorIdx : 0;
       const [lo, hi] = [Math.min(anchor, idx), Math.max(anchor, idx)];
       setSelection(paneId, entries.slice(lo, hi + 1).map((x) => x.path));
+      setFocusedIdx(idx);
     } else {
       setSelection(paneId, [entry.path]);
+      setFocusedIdx(idx);
+      anchorPathRef.current = entry.path; // set anchor on plain click
     }
   }, [entries, selection, focusedIdx, paneId, setSelection, toggleSelection]);
 

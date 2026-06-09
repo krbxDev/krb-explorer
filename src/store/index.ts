@@ -726,11 +726,19 @@ export const useStore = create<NovaStore>()(
           const currentPath = parent + "\\" + op.newName;
           await fs.renameItem(currentPath, op.oldName);
         } else if (op.kind === 'move' && op.dest) {
-          const moved = op.sources.map(s => {
-            const name = s.replace(/\\/g, "/").split("/").pop()!;
-            return op.dest! + "\\" + name;
-          });
-          await fs.moveItems(moved, op.sources[0].replace(/[\\/][^\\/]+$/, ""));
+          // BUG-011 FIX: group sources by their original parent dir so each file
+          // is moved back to its correct original location, not all to one dir.
+          const byParent = new Map<string, string[]>();
+          for (const s of op.sources) {
+            const name = s.replace(/[\\/]+$/, "").split(/[\\/]/).pop()!;
+            const movedPath = op.dest!.replace(/[\\/]+$/, "") + "\\" + name;
+            const origParent = s.replace(/[\\/][^\\/]+$/, "");
+            if (!byParent.has(origParent)) byParent.set(origParent, []);
+            byParent.get(origParent)!.push(movedPath);
+          }
+          for (const [origParent, movedPaths] of byParent) {
+            await fs.moveItems(movedPaths, origParent);
+          }
         } else if (op.kind === 'copy' && op.dest) {
           const copied = op.sources.map(s => {
             const name = s.replace(/\\/g, "/").split("/").pop()!;

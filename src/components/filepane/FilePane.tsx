@@ -105,14 +105,22 @@ export function FilePane({ paneId, showNavBar }: Props) {
 
   const commitNewFolder = useCallback(async () => {
     if (!newFolderName?.trim() || !pane) { setNewFolderName(null); return; }
+    // BUG-010 FIX: guard against virtual/archive paths where folder creation is invalid
+    if (pane.path.startsWith("::") || /\.(zip|tar|gz|7z|rar)$/i.test(pane.path)) {
+      setNewFolderName(null);
+      return;
+    }
     const newPath = pane.path.replace(/[\\/]+$/, "") + "\\" + newFolderName.trim();
     try {
       await fs.createDirectory(newPath);
-      pushUndo({ id: Math.random().toString(36).slice(2), kind: "create", sources: [newPath], timestamp: Date.now() });
+      pushUndo({ id: crypto.randomUUID(), kind: "create", sources: [newPath], timestamp: Date.now() });
       await refresh(paneId);
       // Select the new folder
       setSelection(paneId, [newPath]);
-    } catch (err) { console.error("New folder failed:", err); }
+    } catch (err) {
+      console.error("New folder failed:", err);
+      alert(`Could not create folder: ${String(err)}`);
+    }
     setNewFolderName(null);
   }, [newFolderName, pane, paneId, refresh, setSelection, pushUndo]);
 

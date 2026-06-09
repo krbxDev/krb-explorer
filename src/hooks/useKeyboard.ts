@@ -2,18 +2,20 @@ import { useEffect } from "react";
 import { useStore } from "../store";
 
 export function useKeyboard() {
-  const {
-    activePaneId, navigateBack, navigateForward, navigateUp, refresh,
-    openTab, closeTab, activeTabId, tabs, openPalette, selectAll, invertSelection,
-    setViewMode, panes, setClipboard, pasteClipboard, clipboard,
-    openQuickLook, toggleBulkRename, toggleDiskUsage,
-    previewOpen, openPreview, closePreview, undo, redo,
-  } = useStore();
-
+  // BUG-007 FIX: use getState() inside handler to avoid all stale-closure issues
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
       const tag = (e.target as HTMLElement).tagName;
       const isInput = tag === "INPUT" || tag === "TEXTAREA";
+
+      // Read fresh state on every keypress
+      const {
+        activePaneId, navigateBack, navigateForward, navigateUp, refresh,
+        openTab, closeTab, activeTabId, tabs, openPalette, selectAll, invertSelection,
+        setViewMode, panes, setClipboard, pasteClipboard, clipboard,
+        openQuickLook, toggleBulkRename, toggleDiskUsage,
+        previewOpen, openPreview, closePreview, undo, redo,
+      } = useStore.getState();
 
       // Navigation
       if (e.altKey && e.key === "ArrowLeft") { e.preventDefault(); navigateBack(activePaneId); }
@@ -41,6 +43,8 @@ export function useKeyboard() {
       else if (!isInput && e.ctrlKey && e.key === "1") { setViewMode(activePaneId, "details"); }
       else if (!isInput && e.ctrlKey && e.key === "2") { setViewMode(activePaneId, "list"); }
       else if (!isInput && e.ctrlKey && e.key === "3") { setViewMode(activePaneId, "grid"); }
+      // BUG-054 FIX: add Ctrl+4 for Miller columns view
+      else if (!isInput && e.ctrlKey && e.key === "4") { setViewMode(activePaneId, "columns"); }
 
       // Clipboard
       else if (!isInput && e.ctrlKey && e.key === "c") {
@@ -115,5 +119,5 @@ export function useKeyboard() {
 
     window.addEventListener("keydown", handler);
     return () => window.removeEventListener("keydown", handler);
-  }, [activePaneId, tabs, activeTabId, panes, clipboard, previewOpen]);
+  }, []); // BUG-007 FIX: empty deps — handler reads fresh state via getState() each time
 }

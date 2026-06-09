@@ -106,26 +106,36 @@ pub async fn create_directory(path: String) -> Result<(), String> {
 #[command]
 pub async fn delete_items(paths: Vec<String>, to_trash: bool) -> Result<(), String> {
     tokio::task::spawn_blocking(move || {
+        // BUG-005 FIX: collect all errors instead of stopping on first; return
+        // a combined error so the caller knows which files failed.
+        let mut errors: Vec<String> = Vec::new();
         for path in &paths {
             let p = Path::new(path);
-            if to_trash {
+            let result = if to_trash {
                 #[cfg(windows)]
-                trash_windows(path)?;
+                { trash_windows(path) }
                 #[cfg(not(windows))]
                 {
                     if p.is_dir() {
-                        std::fs::remove_dir_all(p).map_err(|e| e.to_string())?;
+                        std::fs::remove_dir_all(p).map_err(|e| e.to_string())
                     } else {
-                        std::fs::remove_file(p).map_err(|e| e.to_string())?;
+                        std::fs::remove_file(p).map_err(|e| e.to_string())
                     }
                 }
             } else if p.is_dir() {
-                std::fs::remove_dir_all(p).map_err(|e| e.to_string())?;
+                std::fs::remove_dir_all(p).map_err(|e| e.to_string())
             } else {
-                std::fs::remove_file(p).map_err(|e| e.to_string())?;
+                std::fs::remove_file(p).map_err(|e| e.to_string())
+            };
+            if let Err(e) = result {
+                errors.push(format!("{}: {}", path, e));
             }
         }
-        Ok(())
+        if errors.is_empty() {
+            Ok(())
+        } else {
+            Err(errors.join("\n"))
+        }
     })
     .await
     .map_err(|e| e.to_string())?
@@ -242,15 +252,32 @@ pub async fn move_items(sources: Vec<String>, dest_dir: String) -> Result<(), St
             let src_path = Path::new(src);
             let file_name = src_path.file_name().ok_or("No filename")?;
             let dest = Path::new(&dest_dir).join(file_name);
-            // Try rename first (same drive), fall back to copy+delete
-            if std::fs::rename(src_path, &dest).is_err() {
-                if src_path.is_dir() {
-                    copy_dir_recursive_simple(src_path, &dest)?;
-                    std::fs::remove_dir_all(src_path).map_err(|e| e.to_string())?;
+            // Try atomic rename first (works on same drive/volume)
+            if std::fs::rename(src_path, &dest).is_ok() {
+                continue;
+            }
+            // BUG-004 FIX: cross-drive move — copy first, then delete source only
+            // on success. If copy fails, clean up the partial dest and return error.
+            // BUG-050 FIX: preserve timestamps after cross-drive copy.
+            let copy_result = if src_path.is_dir() {
+                copy_dir_recursive_preserving(src_path, &dest)
+            } else {
+                copy_file_preserving(src_path, &dest)
+            };
+            if let Err(e) = copy_result {
+                // Clean up partial destination before returning error
+                let _ = if dest.is_dir() {
+                    std::fs::remove_dir_all(&dest)
                 } else {
-                    std::fs::copy(src_path, &dest).map_err(|e| e.to_string())?;
-                    std::fs::remove_file(src_path).map_err(|e| e.to_string())?;
-                }
+                    std::fs::remove_file(&dest)
+                };
+                return Err(format!("Cross-drive move failed for '{}': {}", src, e));
+            }
+            // Copy succeeded — now delete the source
+            if src_path.is_dir() {
+                std::fs::remove_dir_all(src_path).map_err(|e| format!("Could not remove source '{}' after copy: {}", src, e))?;
+            } else {
+                std::fs::remove_file(src_path).map_err(|e| format!("Could not remove source '{}' after copy: {}", src, e))?;
             }
         }
         Ok(())
@@ -259,18 +286,38 @@ pub async fn move_items(sources: Vec<String>, dest_dir: String) -> Result<(), St
     .map_err(|e| e.to_string())?
 }
 
-fn copy_dir_recursive_simple(src: &Path, dst: &Path) -> Result<(), String> {
-    std::fs::create_dir_all(dst).map_err(|e| e.to_string())?;
-    for entry in std::fs::read_dir(src).map_err(|e| e.to_string())?.flatten() {
-        let dst_entry = dst.join(entry.file_name());
-        if entry.path().is_dir() {
-            copy_dir_recursive_simple(&entry.path(), &dst_entry)?;
-        } else {
-            std::fs::copy(entry.path(), dst_entry).map_err(|e| e.to_string())?;
+/// Copy a single file, preserving modification time.
+fn copy_file_preserving(src: &Path, dest: &Path) -> Result<(), String> {
+    std::fs::copy(src, dest).map_err(|e| e.to_string())?;
+    // BUG-050: preserve modification time
+    if let Ok(meta) = std::fs::metadata(src) {
+        if let Ok(mtime) = meta.modified() {
+            let _ = filetime::set_file_mtime(dest, filetime::FileTime::from_system_time(mtime));
         }
     }
     Ok(())
 }
+
+/// Recursively copy a directory, preserving modification times on each file.
+fn copy_dir_recursive_preserving(src: &Path, dst: &Path) -> Result<(), String> {
+    std::fs::create_dir_all(dst).map_err(|e| e.to_string())?;
+    for entry in std::fs::read_dir(src).map_err(|e| e.to_string())?.flatten() {
+        let dst_entry = dst.join(entry.file_name());
+        if entry.path().is_dir() {
+            copy_dir_recursive_preserving(&entry.path(), &dst_entry)?;
+        } else {
+            copy_file_preserving(&entry.path(), &dst_entry)?;
+        }
+    }
+    // Preserve directory mtime too
+    if let Ok(meta) = std::fs::metadata(src) {
+        if let Ok(mtime) = meta.modified() {
+            let _ = filetime::set_file_mtime(dst, filetime::FileTime::from_system_time(mtime));
+        }
+    }
+    Ok(())
+}
+
 
 #[command]
 pub async fn open_item(path: String) -> Result<(), String> {
@@ -481,6 +528,9 @@ pub async fn restore_from_recycle_bin(path: String) -> Result<(), String> {
     tokio::task::spawn_blocking(move || {
         #[cfg(windows)]
         use std::os::windows::process::CommandExt;
+        // BUG-016 FIX: single-quote escaping is correct for PS single-quoted strings.
+        // In PowerShell, single-quoted strings are literal except for '' (escaped ').
+        // Other injection characters ($, `, %) are NOT interpreted in single-quoted strings.
         let escaped = path.replace('\'', "''");
         let script = format!(
             r#"$shell = New-Object -ComObject Shell.Application
@@ -689,7 +739,14 @@ pub async fn bulk_rename(
 
             if new_name != name {
                 let new_path = p.parent().ok_or("No parent")?.join(&new_name);
-                std::fs::rename(p, &new_path).map_err(|e| e.to_string())?;
+                // BUG-020 FIX: if a rename fails, roll back all previously renamed files
+                if let Err(e) = std::fs::rename(p, &new_path) {
+                    // Rollback: rename everything we already renamed back to original names
+                    for (orig, renamed) in &results {
+                        let _ = std::fs::rename(renamed, orig);
+                    }
+                    return Err(format!("Rename failed for '{}': {}. All changes rolled back.", name, e));
+                }
                 results.push((path.clone(), new_path.to_string_lossy().into_owned()));
             }
             counter += 1;
@@ -999,6 +1056,7 @@ pub async fn create_shortcut(target: String, shortcut_path: String) -> Result<()
     tokio::task::spawn_blocking(move || {
         #[cfg(windows)]
         use std::os::windows::process::CommandExt;
+        // BUG-017 FIX: single-quote escaping is sufficient for PS single-quoted strings
         let script = format!(
             "$s=(New-Object -COM WScript.Shell).CreateShortcut('{}'); $s.TargetPath='{}'; $s.Save()",
             shortcut_path.replace('\'', "''"),

@@ -2,7 +2,10 @@ import {
   ChevronLeft, ChevronRight, ChevronUp, RotateCcw, LayoutList,
   LayoutGrid, AlignJustify, Eye, EyeOff, SplitSquareHorizontal,
   SplitSquareVertical, FileEdit, BarChart3, PanelRight,
-  CheckSquare, Type, FolderPlus, Undo2, Redo2
+  CheckSquare, Type, FolderPlus, Undo2, Redo2, Home,
+  Pin, PinOff, FolderOpen, Copy, Group, Globe, Zap,
+  Sparkles, Layout, Clock, Shield, Columns, Search,
+  Activity
 } from "lucide-react";
 import { useStore } from "../../store";
 import { BreadcrumbBar } from "./BreadcrumbBar";
@@ -39,16 +42,31 @@ function Sep() {
   return <div className="w-px h-5 bg-[var(--border)] mx-0.5" />;
 }
 
-export function Toolbar() {
+interface Props {
+  onOpenWorkspaces?: () => void;
+  onOpenTimeline?: () => void;
+}
+
+export function Toolbar({ onOpenWorkspaces, onOpenTimeline }: Props) {
   const {
     activePaneId, panes, splitMode, previewOpen,
-    navigateBack, navigateForward, navigateUp, refresh,
+    navigateBack, navigateForward, navigateUp, refresh, navigate,
     setViewMode, setShowHidden, setSplit, openPreview, closePreview,
     toggleBulkRename, toggleDiskUsage,
     bulkRenameOpen, diskUsageOpen,
     checkboxMode, toggleCheckboxMode,
     showExtensions, toggleShowExtensions,
     undoStack, redoStack, undo, redo,
+    alwaysOnTop, setAlwaysOnTop,
+    gridIconSize, setGridIconSize,
+    groupBy, setGroupBy,
+    openDuplicateFinder, openNetworkDriveDialog,
+    showFolderSizes, toggleShowFolderSizes,
+    toggleFtp, ftpOpen,
+    toggleIndexedSearch, indexedSearchOpen,
+    toggleAi, aiOpen,
+    toggleActivityLog, activityLogOpen,
+    toggleLargeFiles, largeFilesOpen,
   } = useStore();
 
   const pane = panes[activePaneId];
@@ -62,10 +80,12 @@ export function Toolbar() {
     { mode: "details", icon: <AlignJustify size={14} />, label: "Details (Ctrl+1)" },
     { mode: "list", icon: <LayoutList size={14} />, label: "List (Ctrl+2)" },
     { mode: "grid", icon: <LayoutGrid size={14} />, label: "Grid (Ctrl+3)" },
+    { mode: "columns", icon: <Columns size={14} />, label: "Miller Columns (Ctrl+4)" },
   ];
 
   return (
-    <div className="flex items-center h-9 px-2 gap-0.5 bg-[var(--bg-surface)] border-b border-[var(--border)] shrink-0">
+    <div className="flex items-center h-9 px-2 gap-0.5 bg-[var(--bg-surface)] border-b border-[var(--border)] shrink-0 overflow-x-auto">
+      <Btn icon={<Home size={14} />} label="Home (This PC)" onClick={() => navigate(activePaneId, "::home")} />
       <Btn icon={<ChevronLeft size={16} />} label="Back (Alt+Left)" onClick={() => navigateBack(activePaneId)} disabled={!canBack} />
       <Btn icon={<ChevronRight size={16} />} label="Forward (Alt+Right)" onClick={() => navigateForward(activePaneId)} disabled={!canForward} />
       <Btn icon={<ChevronUp size={16} />} label="Up (Alt+Up)" onClick={() => navigateUp(activePaneId)} />
@@ -132,6 +152,59 @@ export function Toolbar() {
         onClick={toggleBulkRename} active={bulkRenameOpen} />
       <Btn icon={<BarChart3 size={14} />} label="Disk usage"
         onClick={toggleDiskUsage} active={diskUsageOpen} />
+
+      <Sep />
+
+      <Btn icon={<FolderOpen size={13} />} label="Toggle folder sizes" onClick={toggleShowFolderSizes} active={showFolderSizes} />
+      <Btn
+        icon={<Group size={13} />}
+        label={`Group by: ${groupBy ?? "none"}`}
+        onClick={() => {
+          const options: Array<string | null> = [null, "type", "size", "modified"];
+          const next = options[(options.indexOf(groupBy) + 1) % options.length];
+          setGroupBy(next);
+        }}
+        active={groupBy !== null}
+      />
+      <Btn icon={<Copy size={13} />} label="Find duplicates" onClick={() => openDuplicateFinder(pane.path)} />
+
+      <Sep />
+
+      {/* Advanced features */}
+      <Btn icon={<Globe size={13} />} label="Remote connections (FTP/SFTP/S3)" onClick={toggleFtp} active={ftpOpen} />
+      <Btn icon={<Zap size={13} />} label="Instant search (indexed)" onClick={toggleIndexedSearch} active={indexedSearchOpen} />
+      <Btn icon={<Activity size={13} />} label="Activity log" onClick={toggleActivityLog} active={activityLogOpen} />
+      <Btn icon={<Search size={13} />} label="Large files finder" onClick={toggleLargeFiles} active={largeFilesOpen} />
+      <Btn icon={<Clock size={13} />} label="File timeline" onClick={() => onOpenTimeline?.()} />
+      <Btn icon={<Layout size={13} />} label="Workspaces" onClick={() => onOpenWorkspaces?.()} />
+      <Btn icon={<Sparkles size={13} />} label="AI assistant" onClick={toggleAi} active={aiOpen} />
+
+      <Sep />
+
+      {/* Icon size slider (grid mode only) */}
+      {viewMode === "grid" && (
+        <div className="flex items-center gap-1 px-1">
+          <span className="text-[9px] text-[var(--text-muted)]">S</span>
+          <input
+            type="range"
+            min={60}
+            max={256}
+            step={8}
+            value={gridIconSize}
+            onChange={(e) => setGridIconSize(Number(e.target.value))}
+            className="w-16 h-1 accent-[var(--accent)] cursor-pointer"
+            title={`Icon size: ${gridIconSize}px`}
+          />
+          <span className="text-[9px] text-[var(--text-muted)]">L</span>
+        </div>
+      )}
+
+      <Btn
+        icon={alwaysOnTop ? <Pin size={13} /> : <PinOff size={13} />}
+        label={alwaysOnTop ? "Disable always on top" : "Always on top"}
+        onClick={() => setAlwaysOnTop(!alwaysOnTop)}
+        active={alwaysOnTop}
+      />
     </div>
   );
 }

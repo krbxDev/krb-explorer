@@ -1,6 +1,5 @@
 import { useEffect, useState } from "react";
 import { TitleBar } from "./components/titlebar/TitleBar";
-import { TabBar } from "./components/tabs/TabBar";
 import { Toolbar } from "./components/toolbar/Toolbar";
 import { Sidebar } from "./components/sidebar/Sidebar";
 import { FilePane } from "./components/filepane/FilePane";
@@ -15,6 +14,18 @@ import { UpdateChecker } from "./components/updater/UpdateChecker";
 import { PropertiesDialog } from "./components/filepane/PropertiesDialog";
 import { ConflictDialog } from "./components/filepane/ConflictDialog";
 import { OpenWithDialog } from "./components/filepane/OpenWithDialog";
+import { NetworkDriveDialog } from "./components/dialogs/NetworkDriveDialog";
+import { DuplicateFinderModal } from "./components/dialogs/DuplicateFinderModal";
+import { CopyQueue } from "./components/progress/CopyQueue";
+import { FileVaultDialog } from "./components/dialogs/FileVaultDialog";
+import { LargeFilesModal } from "./components/dialogs/LargeFilesModal";
+import { ActivityLogModal } from "./components/dialogs/ActivityLogModal";
+import { WorkspacesModal } from "./components/dialogs/WorkspacesModal";
+import { IndexedSearchModal } from "./components/dialogs/IndexedSearchModal";
+import { AiAssistantModal } from "./components/dialogs/AiAssistantModal";
+import { FtpPanel } from "./components/dialogs/FtpPanel";
+import { PermissionsModal } from "./components/dialogs/PermissionsModal";
+import { FileTimelineModal } from "./components/dialogs/FileTimelineModal";
 import { useStore } from "./store";
 import { useKeyboard } from "./hooks/useKeyboard";
 
@@ -23,14 +34,24 @@ export function App() {
     activePaneId, panes, splitMode, splitPaneIds, tabs, activeTabId,
     navigate, loadDrives, loadFavorites, previewOpen,
     sidebarCollapsed,
+    restoreSession, loadWslDistros, loadFolderColors,
+    workspaces,
   } = useStore();
 
   const [updateOpen, setUpdateOpen] = useState(false);
+  const [workspacesOpen, setWorkspacesOpen] = useState(false);
+  const [timelineOpen, setTimelineOpen] = useState(false);
 
   // Expose manual trigger globally so TitleBar / menu can call it
   useEffect(() => {
     (window as any).__openUpdateChecker = () => setUpdateOpen(true);
-    return () => { delete (window as any).__openUpdateChecker; };
+    (window as any).__openWorkspaces = () => setWorkspacesOpen(true);
+    (window as any).__openTimeline = () => setTimelineOpen(true);
+    return () => {
+      delete (window as any).__openUpdateChecker;
+      delete (window as any).__openWorkspaces;
+      delete (window as any).__openTimeline;
+    };
   }, []);
 
   useKeyboard();
@@ -38,11 +59,25 @@ export function App() {
   useEffect(() => {
     loadDrives();
     loadFavorites();
+    loadWslDistros();
+    loadFolderColors();
+
     const initialPaneId = Object.keys(panes)[0];
-    // Support ?path=... so "Open in new window" can pass a starting directory
+    // Support ?path=... for "Open in new window"
     const urlPath = new URLSearchParams(window.location.search).get("path");
-    const startPath = urlPath ? decodeURIComponent(urlPath) : panes[initialPaneId]?.path;
-    if (initialPaneId && startPath) navigate(initialPaneId, startPath);
+
+    // BUG-029 FIX: only navigate to URL/default if session restore didn't set a path
+    if (urlPath) {
+      // Explicit URL param always wins
+      navigate(initialPaneId, decodeURIComponent(urlPath));
+    } else {
+      // Try session restore first; if it has no data, navigate to home
+      restoreSession();
+      const afterRestore = useStore.getState().panes[initialPaneId]?.path;
+      if (!afterRestore || afterRestore === "::home") {
+        navigate(initialPaneId, "::home");
+      }
+    }
   }, []);
 
   const activeTab = tabs.find((t) => t.id === activeTabId);
@@ -52,8 +87,7 @@ export function App() {
   return (
     <div className="flex flex-col h-full bg-[var(--bg-base)] overflow-hidden">
       <TitleBar />
-      <TabBar />
-      <Toolbar />
+      <Toolbar onOpenWorkspaces={() => setWorkspacesOpen(true)} onOpenTimeline={() => setTimelineOpen(true)} />
 
       <div className="flex flex-1 overflow-hidden">
         {!sidebarCollapsed && splitMode === "none" && <Sidebar />}
@@ -94,12 +128,26 @@ export function App() {
       <PropertiesDialog />
       <ConflictDialog />
       <OpenWithDialog />
+      <NetworkDriveDialog />
+      <DuplicateFinderModal />
+
+      {/* Advanced feature modals */}
+      <CopyQueue />
+      <FileVaultDialog />
+      <LargeFilesModal />
+      <ActivityLogModal />
+      <IndexedSearchModal />
+      <AiAssistantModal />
+      <FtpPanel />
+      <PermissionsModal />
+      <WorkspacesModal open={workspacesOpen} onClose={() => setWorkspacesOpen(false)} />
+      <FileTimelineModal open={timelineOpen} onClose={() => setTimelineOpen(false)} />
 
       {/* Silent startup check — only renders UI when update is available */}
       <UpdateChecker silent />
 
-      {/* Manual check triggered from menu/titlebar */}
-      {updateOpen && <UpdateChecker key={Date.now()} onClose={() => setUpdateOpen(false)} autoCheck />}
+      {/* Manual check triggered from menu/titlebar — BUG-030 FIX: stable key */}
+      {updateOpen && <UpdateChecker key="manual-update-checker" onClose={() => setUpdateOpen(false)} autoCheck />}
     </div>
   );
 }

@@ -7,10 +7,11 @@ export function cn(...inputs: ClassValue[]) {
 }
 
 export function formatSize(bytes: number): string {
-  if (bytes === 0) return "0 B";
+  // BUG-023 FIX: guard against negative/NaN bytes
+  if (!bytes || bytes <= 0) return "0 B";
   const k = 1024;
   const sizes = ["B", "KB", "MB", "GB", "TB"];
-  const i = Math.floor(Math.log(bytes) / Math.log(k));
+  const i = Math.min(Math.floor(Math.log(bytes) / Math.log(k)), sizes.length - 1);
   return `${(bytes / Math.pow(k, i)).toFixed(i > 0 ? 1 : 0)} ${sizes[i]}`;
 }
 
@@ -27,16 +28,29 @@ export function formatDate(iso: string | null, relative = false): string {
 }
 
 export function getPathParts(path: string): { label: string; path: string }[] {
-  const normalized = path.replace(/\\/g, "/").replace(/\/+/g, "/");
+  // BUG-049 FIX: return empty for virtual paths — breadcrumb should not render them
+  if (path.startsWith("::")) return [{ label: path === "::home" ? "This PC" : "Recycle Bin", path }];
+
+  // BUG-039 FIX: preserve UNC prefix \\server\share
+  const isUnc = path.startsWith("\\\\") || path.startsWith("//");
+  const normalized = path.replace(/\\/g, "/").replace(/\/+/g, "/").replace(/^\/\//, "");
   const parts = normalized.split("/").filter(Boolean);
   const result: { label: string; path: string }[] = [];
 
-  let current = "";
-  for (const part of parts) {
+  let current = isUnc ? "\\\\" : "";
+  for (let i = 0; i < parts.length; i++) {
+    const part = parts[i];
     // Windows drive like C:
-    if (part.match(/^[A-Za-z]:$/)) {
+    if (!isUnc && part.match(/^[A-Za-z]:$/)) {
       current = part + "\\";
       result.push({ label: part + "\\", path: current });
+    } else if (isUnc && i < 2) {
+      // For UNC: first part is server, second is share — together they form \\server\share
+      current = current + (i === 0 ? part : "\\" + part);
+      if (i === 1) {
+        result.push({ label: `\\\\${parts[0]}\\${parts[1]}`, path: current + "\\" });
+        current = current + "\\";
+      }
     } else {
       current = current.endsWith("\\") || current.endsWith("/")
         ? current + part
@@ -48,15 +62,23 @@ export function getPathParts(path: string): { label: string; path: string }[] {
 }
 
 export function pathJoin(...parts: string[]): string {
-  return parts.join("\\").replace(/\\+/g, "\\");
+  // BUG-043 FIX: normalise all parts to backslash before joining
+  return parts.map((p) => p.replace(/\//g, "\\")).join("\\").replace(/\\+/g, "\\");
 }
 
 export function pathParent(path: string): string {
+  // BUG-049: virtual paths have no parent
+  if (path.startsWith("::")) return path;
+
+  // BUG-024 FIX: preserve UNC prefix
+  const isUnc = path.startsWith("\\\\") || path.startsWith("//");
   const normalized = path.replace(/\\/g, "/");
-  const parts = normalized.split("/").filter(Boolean);
+  const parts = normalized.replace(/^\/\//, "").split("/").filter(Boolean);
   if (parts.length <= 1) return path;
+  // For UNC, don't go above \\server\share
+  if (isUnc && parts.length <= 2) return path;
   parts.pop();
-  const p = parts.join("\\");
+  const p = (isUnc ? "\\\\" : "") + parts.join("\\");
   return p.endsWith(":") ? p + "\\" : p;
 }
 
@@ -150,5 +172,6 @@ export function getFileCategory(ext: string | null): string {
 }
 
 export function generateId(): string {
-  return Math.random().toString(36).slice(2, 10);
+  // BUG-022 FIX: use cryptographically secure UUID
+  return crypto.randomUUID();
 }

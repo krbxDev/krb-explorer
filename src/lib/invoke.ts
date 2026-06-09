@@ -1,5 +1,5 @@
 import { invoke as tauriInvoke } from "@tauri-apps/api/core";
-import type { FileEntry, DriveInfo, SearchResult, Favorite, HistoryEntry, ConflictInfo, FileProperties, OpenWithApp } from "./types";
+import type { FileEntry, DriveInfo, SearchResult, Favorite, HistoryEntry, ConflictInfo, FileProperties, OpenWithApp, AclEntry, ActivityEntry, WslDistro } from "./types";
 
 const invoke = tauriInvoke;
 
@@ -41,6 +41,34 @@ export const fs = {
   showPreviousVersions: (path: string) => invoke<void>("show_previous_versions", { path }),
   pinToStart: (path: string) => invoke<void>("pin_to_start", { path }),
   formatDrive: (path: string) => invoke<void>("format_drive", { path }),
+  getFileHash: (path: string, algorithm: "MD5" | "SHA1" | "SHA256") =>
+    invoke<string>("get_file_hash", { path, algorithm }),
+  getRecycleBinItems: () => invoke<FileEntry[]>("get_recycle_bin_items"),
+  restoreFromRecycleBin: (path: string) => invoke<void>("restore_from_recycle_bin", { path }),
+  emptyRecycleBin: () => invoke<void>("empty_recycle_bin"),
+  mapNetworkDrive: (letter: string, path: string, persistent: boolean) =>
+    invoke<void>("map_network_drive", { letter, path, persistent }),
+  disconnectNetworkDrive: (letter: string) => invoke<void>("disconnect_network_drive", { letter }),
+  findDuplicateFiles: (path: string) => invoke<string[][]>("find_duplicate_files", { path }),
+  sendToDesktopShortcut: (path: string) => invoke<void>("send_to_desktop_shortcut", { path }),
+  sendToZip: (paths: string[], destDir: string) => invoke<string>("send_to_zip", { paths, destDir }),
+  getFolderSizes: (paths: string[]) => invoke<[string, number][]>("get_folder_sizes", { paths }),
+  secureDelete: (paths: string[], passes?: number) => invoke<void>("secure_delete", { paths, passes: passes ?? 3 }),
+  detectSuspiciousFiles: (paths: string[]) => invoke<string[]>("detect_suspicious_files", { paths }),
+  findLargeFiles: (path: string, limit?: number) => invoke<[string, number][]>("find_large_files", { path, limit: limit ?? 50 }),
+  getFileAcl: (path: string) => invoke<AclEntry[]>("get_file_acl", { path }),
+  encryptFile: (path: string, password: string, outputPath?: string) => invoke<void>("encrypt_file", { path, password, outputPath: outputPath ?? "" }),
+  decryptFile: (path: string, password: string, outputPath?: string) => invoke<void>("decrypt_file", { path, password, outputPath: outputPath ?? "" }),
+  logFileOperation: (operation: string, paths: string[], destination?: string) => invoke<void>("log_file_operation", { operation, paths, destination }),
+  getActivityLog: (limit?: number) => invoke<ActivityEntry[]>("get_activity_log", { limit: limit ?? 100 }),
+  getFolderColors: () => invoke<[string, string][]>("get_folder_colors"),
+  setFolderColor: (path: string, color: string | null) => invoke<void>("set_folder_color", { path, color }),
+  checkCloudSyncStatus: (path: string) => invoke<string>("check_cloud_sync_status", { path }),
+  searchFilesIndexed: (query: string, limit?: number) => invoke<SearchResult[]>("search_files_indexed", { query, limit: limit ?? 200 }),
+  indexPathToDb: (path: string) => invoke<number>("index_path_to_db", { path }),
+  getWslDistros: () => invoke<WslDistro[]>("get_wsl_distros"),
+  openWslTerminal: (distro: string, path: string) => invoke<void>("open_wsl_terminal", { distro, path }),
+  copyItemsWithProgress: (sources: string[], destDir: string, operationId: string) => invoke<void>("copy_items_with_progress", { sources, destDir, operationId }),
 };
 
 export const search = {
