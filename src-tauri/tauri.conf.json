@@ -1,6 +1,6 @@
 {
   "productName": "KRB Explorer",
-  "version": "1.0.44",
+  "version": "1.0.45",
   "identifier": "com.krb-explorer.app",
   "build": {
     "beforeDevCommand": "npm run dev",
@@ -38,7 +38,9 @@
   },
   "bundle": {
     "active": true,
-    "targets": ["nsis"],
+    "targets": [
+      "nsis"
+    ],
     "createUpdaterArtifacts": true,
     "icon": [
       "icons/32x32.png",
@@ -60,4 +62,3 @@
     }
   }
 }
-
