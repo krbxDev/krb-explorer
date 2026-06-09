@@ -2,12 +2,12 @@ import { create } from "zustand";
 import { immer } from "zustand/middleware/immer";
 import type {
   PaneState, Tab, FileEntry, DriveInfo, Favorite, SortKey, ViewMode, CopyProgress,
-  OperationRecord
+  OperationRecord, CopyQueueItem, Workspace, FtpConnection, RowDensity, ActivityEntry
 } from "../lib/types";
 import { fs, db, search, git, watcher } from "../lib/invoke";
 import { generateId, pathParent } from "../lib/utils";
 
-interface Clipboard { paths: string[]; mode: "copy" | "cut" }
+interface Clipboard { paths: string[]; mode: "copy" | "cut"; sourcePaneId?: string }
 
 interface NovaStore {
   panes: Record<string, PaneState>;
@@ -44,6 +44,45 @@ interface NovaStore {
   showSystemFiles: boolean;
   propertiesPath: string | null;
   propertiesOpen: boolean;
+  // New Windows Explorer features
+  gridIconSize: number;
+  hiddenColumns: string[];
+  groupBy: string | null;
+  alwaysOnTop: boolean;
+  recycleBinOpen: boolean;
+  networkDriveOpen: boolean;
+  duplicateFinderPath: string | null;
+  showFolderSizes: boolean;
+  // Copy queue
+  copyQueue: CopyQueueItem[];
+  copyQueueOpen: boolean;
+  // Workspaces
+  workspaces: Workspace[];
+  // Row density
+  rowDensity: RowDensity;
+  // Folder colors
+  folderColors: Record<string, string>;
+  // Activity log
+  activityLogOpen: boolean;
+  // Large files finder
+  largeFilesOpen: boolean;
+  // File vault
+  fileVaultOpen: boolean;
+  fileVaultPath: string | null;
+  // Permissions viewer
+  permissionsPath: string | null;
+  // FTP connections
+  ftpConnections: FtpConnection[];
+  ftpOpen: boolean;
+  // WSL
+  wslDistros: { name: string; home_path: string }[];
+  // Indexed search
+  indexedSearchOpen: boolean;
+  // AI features
+  aiOpen: boolean;
+  aiApiKey: string;
+  // Session
+  lastSession: { paths: string[]; splitMode: string } | null;
 
   navigate: (paneId: string, path: string) => Promise<void>;
   invertSelection: (paneId: string) => void;
@@ -55,6 +94,55 @@ interface NovaStore {
   toggleShowSystemFiles: () => void;
   openProperties: (path: string) => void;
   closeProperties: () => void;
+  setGridIconSize: (size: number) => void;
+  setHiddenColumns: (cols: string[]) => void;
+  setGroupBy: (col: string | null) => void;
+  setAlwaysOnTop: (v: boolean) => void;
+  openRecycleBin: () => void;
+  closeRecycleBin: () => void;
+  openNetworkDriveDialog: () => void;
+  closeNetworkDriveDialog: () => void;
+  openDuplicateFinder: (path: string) => void;
+  closeDuplicateFinder: () => void;
+  toggleShowFolderSizes: () => void;
+  // Copy queue
+  addCopyQueueItem: (item: CopyQueueItem) => void;
+  updateCopyQueueItem: (id: string, update: Partial<CopyQueueItem>) => void;
+  removeCopyQueueItem: (id: string) => void;
+  toggleCopyQueue: () => void;
+  // Workspaces
+  saveWorkspace: (name: string) => void;
+  loadWorkspace: (id: string) => void;
+  deleteWorkspace: (id: string) => void;
+  // Row density
+  setRowDensity: (d: RowDensity) => void;
+  // Folder colors
+  loadFolderColors: () => Promise<void>;
+  setFolderColor: (path: string, color: string | null) => Promise<void>;
+  // Activity log
+  toggleActivityLog: () => void;
+  // Large files finder
+  toggleLargeFiles: () => void;
+  // File vault
+  openFileVault: (path: string) => void;
+  closeFileVault: () => void;
+  // Permissions
+  openPermissions: (path: string) => void;
+  closePermissions: () => void;
+  // FTP
+  toggleFtp: () => void;
+  addFtpConnection: (conn: FtpConnection) => void;
+  removeFtpConnection: (id: string) => void;
+  // WSL
+  loadWslDistros: () => Promise<void>;
+  // Indexed search
+  toggleIndexedSearch: () => void;
+  // AI
+  toggleAi: () => void;
+  setAiApiKey: (key: string) => void;
+  // Session save/restore
+  saveSession: () => void;
+  restoreSession: () => void;
   setColumnOrder: (order: string[]) => void;
   navigateBack: (paneId: string) => void;
   navigateForward: (paneId: string) => void;
@@ -131,7 +219,7 @@ function createPane(path: string): PaneState {
   };
 }
 
-const HOME = "C:\\Users";
+const HOME = "::home";
 const initialPane = createPane(HOME);
 const initialTab: Tab = { id: generateId(), label: "Home", paneId: initialPane.id, pinned: false };
 
@@ -160,8 +248,9 @@ export const useStore = create<NovaStore>()(
     terminalOpen: false,
     bulkRenameOpen: false,
     diskUsageOpen: false,
-    columnWidths: { name: 400, modified: 144, type: 96, size: 80 },
-    columnOrder: ["name", "modified", "type", "size"],
+    columnWidths: { name: 400, modified: 144, type: 96, size: 80, attributes: 72 },
+    columnOrder: ["name", "modified", "type", "size", "attributes"],
+    // attributes column is hidden by default; users can show it via column chooser
     folderSortPrefs: {},
     undoStack: [],
     redoStack: [],
@@ -170,8 +259,53 @@ export const useStore = create<NovaStore>()(
     showSystemFiles: false,
     propertiesPath: null,
     propertiesOpen: false,
+    gridIconSize: 100,
+    hiddenColumns: ["attributes"],
+    groupBy: null,
+    alwaysOnTop: false,
+    recycleBinOpen: false,
+    networkDriveOpen: false,
+    duplicateFinderPath: null,
+    showFolderSizes: false,
+    copyQueue: [],
+    copyQueueOpen: false,
+    workspaces: JSON.parse(localStorage.getItem("krb-workspaces") ?? "[]"),
+    rowDensity: (localStorage.getItem("krb-row-density") as RowDensity) ?? "comfortable",
+    folderColors: {},
+    activityLogOpen: false,
+    largeFilesOpen: false,
+    fileVaultOpen: false,
+    fileVaultPath: null,
+    permissionsPath: null,
+    ftpConnections: JSON.parse(localStorage.getItem("krb-ftp-connections") ?? "[]"),
+    ftpOpen: false,
+    wslDistros: [],
+    indexedSearchOpen: false,
+    aiOpen: false,
+    aiApiKey: localStorage.getItem("krb-ai-key") ?? "",
+    lastSession: JSON.parse(localStorage.getItem("krb-last-session") ?? "null"),
 
     navigate: async (paneId, path) => {
+      // Handle special virtual paths
+      if (path === "::home" || path === "::recycle") {
+        set((s) => {
+          const pane = s.panes[paneId];
+          if (!pane) return;
+          if (pane.history[pane.historyIndex] !== path) {
+            pane.history = pane.history.slice(0, pane.historyIndex + 1);
+            pane.history.push(path);
+            pane.historyIndex = pane.history.length - 1;
+          }
+          pane.path = path;
+          pane.entries = [];
+          pane.loading = false;
+          pane.selection = new Set();
+          const tab = s.tabs.find((t) => t.paneId === paneId);
+          if (tab) tab.label = path === "::home" ? "Home" : "Recycle Bin";
+        });
+        return;
+      }
+
       const { ARCHIVE_EXTS } = await import("../lib/utils");
       const ext = path.split(/[\\/]/).pop()?.split(".").pop()?.toLowerCase() ?? "";
       const isArchive = ARCHIVE_EXTS.has(ext) && !path.endsWith("\\") && !path.endsWith("/");
@@ -334,16 +468,21 @@ export const useStore = create<NovaStore>()(
       const pane = get().panes[paneId];
       if (!pane || pane.historyIndex <= 0) return;
       const newIndex = pane.historyIndex - 1;
+      const targetPath = pane.history[newIndex];
+      // BUG-006 FIX: set index first, then navigate with history already at correct index
+      // so navigate()'s guard `history[historyIndex] !== path` sees equality and skips push
       set((s) => { s.panes[paneId].historyIndex = newIndex; });
-      get().navigate(paneId, pane.history[newIndex]);
+      get().navigate(paneId, targetPath);
     },
 
     navigateForward: (paneId) => {
       const pane = get().panes[paneId];
       if (!pane || pane.historyIndex >= pane.history.length - 1) return;
       const newIndex = pane.historyIndex + 1;
+      const targetPath = pane.history[newIndex];
+      // BUG-006 FIX: same as navigateBack
       set((s) => { s.panes[paneId].historyIndex = newIndex; });
-      get().navigate(paneId, pane.history[newIndex]);
+      get().navigate(paneId, targetPath);
     },
 
     navigateUp: (paneId) => {
@@ -497,7 +636,10 @@ export const useStore = create<NovaStore>()(
     openPalette: () => set((s) => { s.paletteOpen = true; }),
     closePalette: () => set((s) => { s.paletteOpen = false; }),
 
-    setClipboard: (paths, mode) => set((s) => { s.clipboard = { paths, mode }; }),
+    setClipboard: (paths, mode) => set((s) => {
+      // BUG-009 FIX: record source pane so we can refresh it after a cut+paste
+      s.clipboard = { paths, mode, sourcePaneId: s.activePaneId };
+    }),
 
     pasteClipboard: async (destPaneId) => {
       const { clipboard, panes } = get();
@@ -520,11 +662,16 @@ export const useStore = create<NovaStore>()(
       try {
         if (clipboard.mode === "copy") {
           await fs.copyItems(clipboard.paths, destDir);
-          get().pushUndo({ id: Math.random().toString(36).slice(2), kind: 'copy', sources: clipboard.paths, dest: destDir, timestamp: Date.now() });
+          get().pushUndo({ id: crypto.randomUUID(), kind: 'copy', sources: clipboard.paths, dest: destDir, timestamp: Date.now() });
         } else {
           await fs.moveItems(clipboard.paths, destDir);
-          get().pushUndo({ id: Math.random().toString(36).slice(2), kind: 'move', sources: clipboard.paths, dest: destDir, timestamp: Date.now() });
+          get().pushUndo({ id: crypto.randomUUID(), kind: 'move', sources: clipboard.paths, dest: destDir, timestamp: Date.now() });
+          const sourcePaneId = clipboard.sourcePaneId;
           set((s) => { s.clipboard = null; });
+          // BUG-009 FIX: refresh source pane after cut so moved files disappear
+          if (sourcePaneId && sourcePaneId !== destPaneId) {
+            get().refresh(sourcePaneId).catch(() => {});
+          }
         }
       } finally {
         get().setCopyProgress(null);
@@ -619,6 +766,123 @@ export const useStore = create<NovaStore>()(
         await get().refresh(activePaneId);
       } catch { /* best-effort */ }
     },
+
+    // Copy queue
+    addCopyQueueItem: (item) => set((s) => { s.copyQueue.push(item); }),
+    updateCopyQueueItem: (id, update) => set((s) => {
+      const item = s.copyQueue.find((i) => i.id === id);
+      if (item) Object.assign(item, update);
+    }),
+    removeCopyQueueItem: (id) => set((s) => { s.copyQueue = s.copyQueue.filter((i) => i.id !== id); }),
+    toggleCopyQueue: () => set((s) => { s.copyQueueOpen = !s.copyQueueOpen; }),
+
+    // Workspaces
+    saveWorkspace: (name) => {
+      const { panes, activePaneId, splitMode, splitPaneIds } = get();
+      const paths = splitPaneIds
+        ? splitPaneIds.map((id) => panes[id]?.path ?? "").filter(Boolean)
+        : [panes[activePaneId]?.path ?? ""];
+      const workspace: Workspace = { id: crypto.randomUUID(), name, splitMode, paths, createdAt: Date.now() };
+      set((s) => { s.workspaces.push(workspace); });
+      localStorage.setItem("krb-workspaces", JSON.stringify(get().workspaces));
+    },
+    loadWorkspace: (id) => {
+      const { workspaces } = get();
+      const ws = workspaces.find((w) => w.id === id);
+      if (!ws) return;
+      get().setSplit(ws.splitMode as any);
+      // BUG-058 FIX: defer navigate so setSplit's own navigate() call doesn't race
+      // with ours and overwrite the workspace paths.
+      setTimeout(() => {
+        const { panes, activePaneId, splitPaneIds } = get();
+        const paneIds = splitPaneIds ?? [activePaneId];
+        ws.paths.forEach((path, i) => { if (paneIds[i]) get().navigate(paneIds[i], path); });
+      }, 0);
+    },
+    deleteWorkspace: (id) => {
+      set((s) => { s.workspaces = s.workspaces.filter((w) => w.id !== id); });
+      localStorage.setItem("krb-workspaces", JSON.stringify(get().workspaces));
+    },
+
+    // Row density
+    setRowDensity: (d) => {
+      set((s) => { s.rowDensity = d; });
+      localStorage.setItem("krb-row-density", d);
+    },
+
+    // Folder colors
+    loadFolderColors: async () => {
+      try {
+        const entries = await fs.getFolderColors();
+        set((s) => { s.folderColors = Object.fromEntries(entries); });
+      } catch {}
+    },
+    setFolderColor: async (path, color) => {
+      await fs.setFolderColor(path, color).catch(() => {});
+      set((s) => {
+        if (color) s.folderColors[path] = color;
+        else delete s.folderColors[path];
+      });
+    },
+
+    // Panels
+    toggleActivityLog: () => set((s) => { s.activityLogOpen = !s.activityLogOpen; }),
+    toggleLargeFiles: () => set((s) => { s.largeFilesOpen = !s.largeFilesOpen; }),
+    openFileVault: (path) => set((s) => { s.fileVaultOpen = true; s.fileVaultPath = path; }),
+    closeFileVault: () => set((s) => { s.fileVaultOpen = false; s.fileVaultPath = null; }),
+    openPermissions: (path) => set((s) => { s.permissionsPath = path; }),
+    closePermissions: () => set((s) => { s.permissionsPath = null; }),
+    toggleFtp: () => set((s) => { s.ftpOpen = !s.ftpOpen; }),
+    addFtpConnection: (conn) => {
+      set((s) => { s.ftpConnections.push(conn); });
+      localStorage.setItem("krb-ftp-connections", JSON.stringify(get().ftpConnections));
+    },
+    removeFtpConnection: (id) => {
+      set((s) => { s.ftpConnections = s.ftpConnections.filter((c) => c.id !== id); });
+      localStorage.setItem("krb-ftp-connections", JSON.stringify(get().ftpConnections));
+    },
+    loadWslDistros: async () => {
+      try { const distros = await fs.getWslDistros(); set((s) => { s.wslDistros = distros; }); } catch {}
+    },
+    toggleIndexedSearch: () => set((s) => { s.indexedSearchOpen = !s.indexedSearchOpen; }),
+    toggleAi: () => set((s) => { s.aiOpen = !s.aiOpen; }),
+    setAiApiKey: (key) => { set((s) => { s.aiApiKey = key; }); localStorage.setItem("krb-ai-key", key); },
+
+    // Session
+    saveSession: () => {
+      const { panes, activePaneId, splitMode, splitPaneIds } = get();
+      const paths = splitPaneIds
+        ? splitPaneIds.map((id) => panes[id]?.path ?? "").filter(Boolean)
+        : [panes[activePaneId]?.path ?? ""];
+      const session = { paths, splitMode };
+      localStorage.setItem("krb-last-session", JSON.stringify(session));
+      set((s) => { s.lastSession = session; });
+    },
+    restoreSession: () => {
+      const session = get().lastSession;
+      if (!session) return;
+      if (session.splitMode !== "none") get().setSplit(session.splitMode as any);
+      const { panes, activePaneId, splitPaneIds } = get();
+      const paneIds = splitPaneIds ?? [activePaneId];
+      session.paths.forEach((path, i) => { if (paneIds[i] && path) get().navigate(paneIds[i], path); });
+    },
+
+    setGridIconSize: (size) => set((s) => { s.gridIconSize = Math.max(60, Math.min(256, size)); }),
+    setHiddenColumns: (cols) => set((s) => { s.hiddenColumns = cols; }),
+    setGroupBy: (col) => set((s) => { s.groupBy = col; }),
+    setAlwaysOnTop: (v) => {
+      set((s) => { s.alwaysOnTop = v; });
+      import("@tauri-apps/api/window").then(({ getCurrentWindow }) => {
+        getCurrentWindow().setAlwaysOnTop(v).catch(() => {});
+      }).catch(() => {});
+    },
+    openRecycleBin: () => set((s) => { s.recycleBinOpen = true; }),
+    closeRecycleBin: () => set((s) => { s.recycleBinOpen = false; }),
+    openNetworkDriveDialog: () => set((s) => { s.networkDriveOpen = true; }),
+    closeNetworkDriveDialog: () => set((s) => { s.networkDriveOpen = false; }),
+    openDuplicateFinder: (path) => set((s) => { s.duplicateFinderPath = path; }),
+    closeDuplicateFinder: () => set((s) => { s.duplicateFinderPath = null; }),
+    toggleShowFolderSizes: () => set((s) => { s.showFolderSizes = !s.showFolderSizes; }),
 
     toggleCheckboxMode: () => set((s) => { s.checkboxMode = !s.checkboxMode; }),
     toggleShowExtensions: () => set((s) => { s.showExtensions = !s.showExtensions; }),

@@ -1,56 +1,42 @@
-import { useEffect } from "react";
-import { listen } from "@tauri-apps/api/event";
+// BUG-018/040 FIX: CopyProgressBar now derives state from the store's copyQueue
+// rather than maintaining a separate copy-progress event listener (which expected
+// a different payload shape). The CopyQueue's useCopyQueueListener feeds the store.
 import { useStore } from "../../store";
 import { X } from "lucide-react";
 
 export function CopyProgressBar() {
-  const { copyProgress, setCopyProgress } = useStore();
+  const { copyQueue } = useStore();
 
-  useEffect(() => {
-    const unlisten = listen<any>("copy-progress", (event) => {
-      const p = event.payload;
-      setCopyProgress({
-        current: p.current ?? 0,
-        total: p.total ?? 1,
-        file: p.file ?? "",
-        done: p.done ?? false,
-      });
-      if (p.done) setTimeout(() => setCopyProgress(null), 1500);
-    });
-    return () => { unlisten.then((fn) => fn()); };
-  }, []);
+  // Show a simple bar for the first running/queued item when the full CopyQueue
+  // panel is NOT in use (i.e. queue is empty or all done). This component acts
+  // as a fallback minimal progress indicator.
+  const running = copyQueue.find((i) => i.status === "running");
+  if (!running) return null;
 
-  if (!copyProgress) return null;
-
-  const pct = copyProgress.total > 0
-    ? Math.round((copyProgress.current / copyProgress.total) * 100)
+  const pct = running.bytesTotal > 0
+    ? Math.round((running.bytesDone / running.bytesTotal) * 100)
     : 0;
+  const fileName = running.currentFile?.split(/[\\/]/).pop() ?? "";
 
   return (
-    <div className="fixed bottom-8 right-4 z-50 w-72 bg-[var(--bg-elevated)] border border-[var(--border)] rounded-[var(--radius)] shadow-[var(--shadow)] p-3">
+    <div className="fixed bottom-8 right-4 z-40 w-72 bg-[var(--bg-elevated)] border border-[var(--border)] rounded-[var(--radius)] shadow-[var(--shadow)] p-3">
       <div className="flex items-start justify-between mb-2">
         <div className="min-w-0">
           <p className="text-xs font-medium text-[var(--text-primary)]">
-            {copyProgress.done ? "Copy complete" : `Copying ${copyProgress.current} of ${copyProgress.total}`}
+            {`Copying ${running.filesDone} of ${running.filesTotal}`}
           </p>
-          {copyProgress.file && !copyProgress.done && (
-            <p className="text-[10px] text-[var(--text-muted)] truncate mt-0.5">{copyProgress.file.split(/[\\/]/).pop()}</p>
+          {fileName && (
+            <p className="text-[10px] text-[var(--text-muted)] truncate mt-0.5">{fileName}</p>
           )}
         </div>
-        <button onClick={() => setCopyProgress(null)}
-          className="shrink-0 ml-2 text-[var(--text-muted)] hover:text-[var(--text-primary)] transition-colors">
-          <X size={12} />
-        </button>
       </div>
       <div className="w-full h-1.5 bg-[var(--bg-overlay)] rounded-full overflow-hidden">
         <div
           className="h-full bg-[var(--accent)] rounded-full transition-all duration-300"
-          style={{ width: `${copyProgress.done ? 100 : pct}%` }}
+          style={{ width: `${pct}%` }}
         />
       </div>
-      {!copyProgress.done && (
-        <p className="text-[10px] text-[var(--text-muted)] mt-1 text-right">{pct}%</p>
-      )}
+      <p className="text-[10px] text-[var(--text-muted)] mt-1 text-right">{pct}%</p>
     </div>
   );
 }

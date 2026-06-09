@@ -1,6 +1,5 @@
-import { useVirtualizer } from "@tanstack/react-virtual";
 import { useRef, useCallback, useState, useEffect, useLayoutEffect } from "react";
-import { ArrowUp, ArrowDown, GripVertical } from "lucide-react";
+import { ArrowUp, ArrowDown, GripVertical, ChevronDown, FolderOpen } from "lucide-react";
 import type { FileEntry, SortKey } from "../../lib/types";
 import { FileIcon } from "./FileIcon";
 import { formatSize, formatDate, cn, getFileTypeLabel } from "../../lib/utils";
@@ -25,7 +24,7 @@ const GIT_BADGE: Record<string, { label: string; color: string }> = {
   C: { label: "C", color: "#8b5cf6" },
 };
 
-const ROW_HEIGHT = 26;
+// ROW_HEIGHT is dynamic per rowDensity; default 26
 const MIN_COL = 40;
 
 const ALL_COLS = [
@@ -33,26 +32,70 @@ const ALL_COLS = [
   { key: "modified" as SortKey, label: "Date modified", defaultWidth: 144, flex: false },
   { key: "type" as SortKey, label: "Type", defaultWidth: 96, flex: false },
   { key: "size" as SortKey, label: "Size", defaultWidth: 80, flex: false },
+  { key: "attributes" as any, label: "Attributes", defaultWidth: 72, flex: false },
 ];
+
+function getGroupLabel(entry: FileEntry, groupBy: string): string {
+  if (groupBy === "type") return entry.isDir ? "Folder" : (entry.extension?.toUpperCase() ?? "File");
+  if (groupBy === "size") {
+    if (entry.isDir) return "Folder";
+    const s = entry.size ?? 0;
+    if (s === 0) return "Empty";
+    if (s < 1024 * 16) return "Tiny (< 16 KB)";
+    if (s < 1024 * 1024) return "Small (< 1 MB)";
+    if (s < 1024 * 1024 * 100) return "Medium (< 100 MB)";
+    return "Large (> 100 MB)";
+  }
+  if (groupBy === "modified") {
+    if (!entry.modified) return "Unknown";
+    // BUG-051 FIX: compare local calendar dates, not raw 24-hour deltas
+    const d = new Date(entry.modified as string);
+    const dDay = new Date(d.getFullYear(), d.getMonth(), d.getDate());
+    const now = new Date();
+    const nowDay = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+    const diffDays = (nowDay.getTime() - dDay.getTime()) / 86400000;
+    if (diffDays < 1) return "Today";
+    if (diffDays < 7) return "This week";
+    if (diffDays < 30) return "This month";
+    if (diffDays < 365) return "This year";
+    return "Older";
+  }
+  return "";
+}
 
 export function DetailsView({ paneId, entries, onOpen, onContextMenu, onRenameCommit }: Props) {
   const {
     panes, setSelection, toggleSelection, setSort, columnWidths, setColumnWidth,
     columnOrder, setColumnOrder, checkboxMode, showExtensions,
-    pushUndo, refresh,
+    pushUndo, refresh, clipboard, hiddenColumns, setHiddenColumns, groupBy,
+    showFolderSizes, rowDensity, folderColors,
   } = useStore();
+
+  const rowHeight = rowDensity === "compact" ? 20 : rowDensity === "spacious" ? 34 : 26;
   const pane = panes[paneId];
   const selection = pane?.selection ?? new Set();
   const sortKey = pane?.sortKey ?? "name";
   const sortAsc = pane?.sortAsc ?? true;
 
+  // Column chooser popover
+  const [colChooserOpen, setColChooserOpen] = useState(false);
+  const colChooserBtnRef = useRef<HTMLDivElement>(null);
+
+  // BUG-025 FIX: close column chooser on click outside
+  useEffect(() => {
+    if (!colChooserOpen) return;
+    const handler = (e: MouseEvent) => {
+      if (colChooserBtnRef.current && !colChooserBtnRef.current.contains(e.target as Node)) {
+        setColChooserOpen(false);
+      }
+    };
+    document.addEventListener("mousedown", handler);
+    return () => document.removeEventListener("mousedown", handler);
+  }, [colChooserOpen]);
+  // Folder sizes cache
+  const [folderSizeMap, setFolderSizeMap] = useState<Record<string, number>>({});
+
   const parentRef = useRef<HTMLDivElement>(null);
-  const virtualizer = useVirtualizer({
-    count: entries.length,
-    getScrollElement: () => parentRef.current,
-    estimateSize: () => ROW_HEIGHT,
-    overscan: 20,
-  });
 
   // Focused row index for keyboard navigation
   const [focusedIdx, setFocusedIdx] = useState(-1);
@@ -78,7 +121,35 @@ export function DetailsView({ paneId, entries, onOpen, onContextMenu, onRenameCo
 
   const cols = columnOrder
     .map((k) => ALL_COLS.find((c) => c.key === k))
-    .filter(Boolean) as typeof ALL_COLS;
+    .filter(Boolean)
+    .filter((c) => !hiddenColumns.includes(c!.key)) as typeof ALL_COLS;
+
+  // Load folder sizes when enabled
+  useEffect(() => {
+    if (!showFolderSizes) return;
+    const dirs = entries.filter((e) => e.isDir).map((e) => e.path);
+    if (dirs.length === 0) return;
+    const missing = dirs.filter((p) => folderSizeMap[p] === undefined);
+    if (missing.length === 0) return;
+    // batch in groups of 10
+    const batches: string[][] = [];
+    for (let i = 0; i < missing.length; i += 10) batches.push(missing.slice(i, i + 10));
+    (async () => {
+      for (const batch of batches) {
+        try {
+          const results = await fs.getFolderSizes(batch);
+          setFolderSizeMap((prev) => {
+            const next = { ...prev };
+            for (const [p, sz] of results) next[p] = sz;
+            return next;
+          });
+        } catch {}
+      }
+    })();
+  }, [entries, showFolderSizes]);
+
+  // Reset folder sizes when navigating away
+  useEffect(() => { setFolderSizeMap({}); }, [pane?.path]);
 
   // Focus management
   useEffect(() => {
@@ -86,8 +157,9 @@ export function DetailsView({ paneId, entries, onOpen, onContextMenu, onRenameCo
   }, [entries.length]);
 
   useEffect(() => {
-    if (focusedIdx >= 0 && focusedIdx < entries.length) {
-      virtualizer.scrollToIndex(focusedIdx, { align: "auto" });
+    if (focusedIdx >= 0 && focusedIdx < entries.length && parentRef.current) {
+      const rowEl = parentRef.current.querySelector(`[data-index="${focusedIdx}"]`);
+      rowEl?.scrollIntoView({ block: "nearest" });
     }
   }, [focusedIdx]);
 
@@ -286,8 +358,8 @@ export function DetailsView({ paneId, entries, onOpen, onContextMenu, onRenameCo
         const hi = Math.max(y1, y2);
         const matchedPaths: string[] = [];
         entries.forEach((entry, idx) => {
-          const rowTop = idx * ROW_HEIGHT;
-          const rowBot = rowTop + ROW_HEIGHT;
+          const rowTop = idx * rowHeight;
+          const rowBot = rowTop + rowHeight;
           if (rowBot >= lo && rowTop <= hi) matchedPaths.push(entry.path);
         });
         if (ev.ctrlKey) {
@@ -319,7 +391,7 @@ export function DetailsView({ paneId, entries, onOpen, onContextMenu, onRenameCo
       onKeyDown={handleKeyDown}
     >
       {/* Header */}
-      <div className="flex items-center h-7 border-b border-[var(--border)] bg-[var(--bg-surface)] shrink-0 select-none">
+      <div className="flex items-center h-7 border-b border-[var(--border)] bg-[var(--bg-surface)] shrink-0 select-none relative">
         {checkboxMode && <div className="w-7 shrink-0" />}
         <div className="w-5 shrink-0" />
         {cols.map((col) => {
@@ -341,7 +413,7 @@ export function DetailsView({ paneId, entries, onOpen, onContextMenu, onRenameCo
               {/* Drag handle */}
               <GripVertical size={10} className="text-[var(--text-muted)] opacity-30 hover:opacity-60 cursor-grab shrink-0 ml-1" />
               <button
-                onClick={() => setSort(paneId, col.key, sortKey === col.key ? !sortAsc : true)}
+                onClick={() => setSort(paneId, col.key as SortKey, sortKey === col.key ? !sortAsc : true)}
                 className={cn(
                   "flex items-center gap-1 h-7 px-1 flex-1 text-[11px] font-medium text-[var(--text-muted)] hover:text-[var(--text-primary)] transition-colors",
                   col.key === "size" && "justify-end"
@@ -362,6 +434,45 @@ export function DetailsView({ paneId, entries, onOpen, onContextMenu, onRenameCo
             </div>
           );
         })}
+        {/* Column chooser button */}
+        <div ref={colChooserBtnRef} className="relative ml-auto shrink-0">
+          <button
+            onClick={() => setColChooserOpen((v) => !v)}
+            title="Choose columns"
+            className="h-7 w-6 flex items-center justify-center text-[var(--text-muted)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-hover)] transition-colors"
+          >
+            <ChevronDown size={10} />
+          </button>
+          {colChooserOpen && (
+            <div
+              className="absolute right-0 top-7 z-30 bg-[var(--bg-elevated)] border border-[var(--border)] rounded-lg shadow-xl py-1 min-w-[160px]"
+              onClick={(e) => e.stopPropagation()}
+            >
+              <div className="px-3 py-1 text-[10px] font-semibold text-[var(--text-muted)] uppercase tracking-wider border-b border-[var(--border)] mb-1">
+                Show / hide columns
+              </div>
+              {ALL_COLS.filter(c => c.key !== "name").map((c) => {
+                const visible = !hiddenColumns.includes(c.key);
+                return (
+                  <label key={c.key} className="flex items-center gap-2 px-3 py-1 hover:bg-[var(--bg-hover)] cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={visible}
+                      onChange={() => {
+                        setHiddenColumns(visible
+                          ? [...hiddenColumns, c.key]
+                          : hiddenColumns.filter((k) => k !== c.key)
+                        );
+                      }}
+                      className="w-3 h-3 accent-[var(--accent)]"
+                    />
+                    <span className="text-xs text-[var(--text-secondary)]">{c.label}</span>
+                  </label>
+                );
+              })}
+            </div>
+          )}
+        </div>
       </div>
 
       {/* Rows */}
@@ -369,163 +480,226 @@ export function DetailsView({ paneId, entries, onOpen, onContextMenu, onRenameCo
         ref={parentRef}
         className="flex-1 overflow-auto relative select-none"
         onMouseDown={handleMouseDown}
+        onClick={() => setColChooserOpen(false)}
       >
-        <div style={{ height: virtualizer.getTotalSize(), position: "relative" }}>
-          {virtualizer.getVirtualItems().map((vrow) => {
-            const entry = entries[vrow.index];
-            const selected = selection.has(entry.path);
-            const focused = focusedIdx === vrow.index;
-            const gitBadge = entry.gitStatus ? GIT_BADGE[entry.gitStatus] : null;
+        {/* Grouping: build flat list with group headers */}
+        {(() => {
+          // Build a flat renderable list
+          type RowItem = { type: "entry"; entry: FileEntry; origIdx: number } | { type: "group"; label: string };
+          let flatList: RowItem[] = [];
+          if (groupBy) {
+            // BUG-046 FIX: store index alongside entry to avoid O(n²) indexOf later
+            const groups = new Map<string, { entry: FileEntry; origIdx: number }[]>();
+            entries.forEach((e, i) => {
+              const label = getGroupLabel(e, groupBy);
+              if (!groups.has(label)) groups.set(label, []);
+              groups.get(label)!.push({ entry: e, origIdx: i });
+            });
+            for (const [label, groupEntries] of groups) {
+              flatList.push({ type: "group", label });
+              groupEntries.forEach(({ entry: e, origIdx }) => {
+                flatList.push({ type: "entry", entry: e, origIdx });
+              });
+            }
+          } else {
+            flatList = entries.map((e, i) => ({ type: "entry" as const, entry: e, origIdx: i }));
+          }
 
-            // NTFS color: compressed=blue, encrypted=green
-            const nameColor = entry.ntfsEncrypted
-              ? "text-[#22c55e]"
-              : entry.ntfsCompressed
-                ? "text-[#3b82f6]"
-                : "";
+          const cutPaths = clipboard?.mode === "cut" ? new Set(clipboard.paths) : new Set<string>();
 
-            const displayName = showExtensions
-              ? entry.name
-              : (entry.isDir
-                ? entry.name
-                : (entry.extension && entry.name.endsWith(`.${entry.extension}`)
-                  ? entry.name.slice(0, -(entry.extension.length + 1))
-                  : entry.name));
+          return (
+            <div style={{ position: "relative" }}>
+              {flatList.map((row, flatIdx) => {
+                if (row.type === "group") {
+                  return (
+                    <div
+                      key={`group-${row.label}`}
+                      className="flex items-center gap-2 px-3 py-0.5 h-6 bg-[var(--bg-surface)] border-b border-[var(--border)] select-none"
+                    >
+                      <FolderOpen size={11} className="text-[var(--accent)]" />
+                      <span className="text-[10px] font-semibold text-[var(--text-muted)] uppercase tracking-wider">{row.label}</span>
+                    </div>
+                  );
+                }
 
-            return (
-              <div
-                key={vrow.key}
-                data-row="true"
-                data-index={vrow.index}
-                ref={virtualizer.measureElement}
-                style={{ position: "absolute", top: vrow.start, left: 0, right: 0 }}
-                onClick={(e) => { e.stopPropagation(); handleClick(e, entry, vrow.index); }}
-                onDoubleClick={() => {
-                  if (renamingPath === entry.path) return;
-                  onOpen(entry);
-                }}
-                onContextMenu={(e) => {
-                  e.preventDefault();
-                  e.stopPropagation();
-                  if (!selection.has(entry.path)) handleClick(e, entry, vrow.index);
-                  onContextMenu(e, entry);
-                }}
-                draggable={renamingPath !== entry.path}
-                onDragStart={(e) => {
-                  const paths = selected ? Array.from(selection) : [entry.path];
-                  e.dataTransfer.setData("nova/paths", JSON.stringify(paths));
-                  e.dataTransfer.effectAllowed = "copyMove";
-                }}
-                className={cn(
-                  "flex items-center h-[26px] cursor-default transition-colors",
-                  selected
-                    ? "bg-[var(--bg-selected)] hover:bg-[var(--bg-selected-hover)]"
-                    : vrow.index % 2 === 0
-                      ? "bg-[var(--bg-base)]/60 hover:bg-[var(--bg-hover)]"
-                      : "hover:bg-[var(--bg-hover)]",
-                  focused && !selected && "ring-1 ring-inset ring-[var(--accent)]/40"
-                )}
-              >
-                {/* Checkbox */}
-                {checkboxMode && (
+                const { entry, origIdx } = row;
+                const selected = selection.has(entry.path);
+                const focused = focusedIdx === origIdx;
+                const gitBadge = entry.gitStatus ? GIT_BADGE[entry.gitStatus] : null;
+                const isCut = cutPaths.has(entry.path);
+
+                // NTFS color: compressed=blue, encrypted=green
+                const nameColor = entry.ntfsEncrypted
+                  ? "text-[#22c55e]"
+                  : entry.ntfsCompressed
+                    ? "text-[#3b82f6]"
+                    : "";
+
+                const displayName = showExtensions
+                  ? entry.name
+                  : (entry.isDir
+                    ? entry.name
+                    : (entry.extension && entry.name.endsWith(`.${entry.extension}`)
+                      ? entry.name.slice(0, -(entry.extension.length + 1))
+                      : entry.name));
+
+                return (
                   <div
-                    className="w-7 flex items-center justify-center shrink-0"
-                    onClick={(e) => { e.stopPropagation(); toggleSelection(paneId, entry.path); }}
+                    key={entry.path}
+                    data-row="true"
+                    data-index={origIdx}
+                    onClick={(e) => { e.stopPropagation(); handleClick(e, entry, origIdx); }}
+                    onDoubleClick={() => {
+                      if (renamingPath === entry.path) return;
+                      onOpen(entry);
+                    }}
+                    onContextMenu={(e) => {
+                      e.preventDefault();
+                      e.stopPropagation();
+                      if (!selection.has(entry.path)) handleClick(e, entry, origIdx);
+                      onContextMenu(e, entry);
+                    }}
+                    draggable={renamingPath !== entry.path}
+                    onDragStart={(e) => {
+                      const paths = selected ? Array.from(selection) : [entry.path];
+                      e.dataTransfer.setData("nova/paths", JSON.stringify(paths));
+                      e.dataTransfer.effectAllowed = "copyMove";
+                    }}
+                    className={cn(
+                      "flex items-center cursor-default transition-colors",
+                      isCut && "opacity-50",
+                      selected
+                        ? "bg-[var(--bg-selected)] hover:bg-[var(--bg-selected-hover)]"
+                        : origIdx % 2 === 0
+                          ? "bg-[var(--bg-base)]/60 hover:bg-[var(--bg-hover)]"
+                          : "hover:bg-[var(--bg-hover)]",
+                      focused && !selected && "ring-1 ring-inset ring-[var(--accent)]/40"
+                    )}
+                    style={{
+                      height: rowHeight,
+                      ...(folderColors[entry.path] && !selected ? { borderLeft: `3px solid ${folderColors[entry.path]}` } : {}),
+                    }}
                   >
-                    <input
-                      type="checkbox"
-                      checked={selected}
-                      readOnly
-                      className="w-3.5 h-3.5 accent-[var(--accent)] cursor-pointer"
-                    />
-                  </div>
-                )}
-
-                <div className="w-5 shrink-0 flex items-center justify-center">
-                  <FileIcon entry={entry} size={14} />
-                </div>
-
-                {cols.map((col) => {
-                  const w = col.flex ? undefined : (columnWidths[col.key] ?? col.defaultWidth);
-
-                  if (col.key === "name") {
-                    return (
+                    {/* Checkbox */}
+                    {checkboxMode && (
                       <div
-                        key="name"
-                        className="flex items-center gap-1.5 px-2 min-w-0 overflow-hidden"
-                        style={{ flex: 1 }}
+                        className="w-7 flex items-center justify-center shrink-0"
+                        onClick={(e) => { e.stopPropagation(); toggleSelection(paneId, entry.path); }}
                       >
-                        {renamingPath === entry.path ? (
-                          <input
-                            ref={renameInputRef}
-                            value={renameValue}
-                            onChange={(e2) => setRenameValue(e2.target.value)}
-                            onKeyDown={(e2) => {
-                              e2.stopPropagation();
-                              if (e2.key === "Enter") { e2.preventDefault(); commitRename(); }
-                              if (e2.key === "Escape") { e2.preventDefault(); cancelRename(); }
-                            }}
-                            onBlur={commitRename}
-                            onClick={(e2) => e2.stopPropagation()}
-                            className="flex-1 text-xs bg-[var(--bg-elevated)] border border-[var(--accent)] rounded px-1 py-0 outline-none text-[var(--text-primary)] min-w-0"
-                          />
-                        ) : (
-                          <span
-                            className={cn("truncate text-xs", entry.isHidden && "opacity-50", nameColor)}
-                            onDoubleClick={(e2) => {
-                              // Single double-click on already-selected row opens rename
-                              if (selected && selection.size === 1) {
-                                e2.stopPropagation();
-                                e2.preventDefault();
-                                startRename(entry);
-                              }
-                            }}
+                        <input
+                          type="checkbox"
+                          checked={selected}
+                          readOnly
+                          className="w-3.5 h-3.5 accent-[var(--accent)] cursor-pointer"
+                        />
+                      </div>
+                    )}
+
+                    <div className="w-5 shrink-0 flex items-center justify-center">
+                      <FileIcon entry={entry} size={14} />
+                    </div>
+
+                    {cols.map((col) => {
+                      const w = col.flex ? undefined : (columnWidths[col.key] ?? col.defaultWidth);
+
+                      if (col.key === "name") {
+                        return (
+                          <div
+                            key="name"
+                            className="flex items-center gap-1.5 px-2 min-w-0 overflow-hidden"
+                            style={{ flex: 1 }}
                           >
-                            {displayName}
-                          </span>
-                        )}
-                        {gitBadge && (
-                          <span
-                            className="shrink-0 text-[9px] font-bold px-1 rounded"
-                            style={{ color: gitBadge.color, backgroundColor: `${gitBadge.color}22` }}
-                          >
-                            {gitBadge.label}
-                          </span>
-                        )}
-                      </div>
-                    );
-                  }
+                            {renamingPath === entry.path ? (
+                              <input
+                                ref={renameInputRef}
+                                value={renameValue}
+                                onChange={(e2) => setRenameValue(e2.target.value)}
+                                onKeyDown={(e2) => {
+                                  e2.stopPropagation();
+                                  if (e2.key === "Enter") { e2.preventDefault(); commitRename(); }
+                                  if (e2.key === "Escape") { e2.preventDefault(); cancelRename(); }
+                                }}
+                                onBlur={cancelRename}
+                                onClick={(e2) => e2.stopPropagation()}
+                                className="flex-1 text-xs bg-[var(--bg-elevated)] border border-[var(--accent)] rounded px-1 py-0 outline-none text-[var(--text-primary)] min-w-0"
+                              />
+                            ) : (
+                              <span
+                                className={cn("truncate text-xs", entry.isHidden && "opacity-50", nameColor)}
+                                onDoubleClick={(e2) => {
+                                  if (selected && selection.size === 1) {
+                                    e2.stopPropagation();
+                                    e2.preventDefault();
+                                    startRename(entry);
+                                  }
+                                }}
+                              >
+                                {displayName}
+                              </span>
+                            )}
+                            {gitBadge && (
+                              <span
+                                className="shrink-0 text-[9px] font-bold px-1 rounded"
+                                style={{ color: gitBadge.color, backgroundColor: `${gitBadge.color}22` }}
+                              >
+                                {gitBadge.label}
+                              </span>
+                            )}
+                          </div>
+                        );
+                      }
 
-                  if (col.key === "modified") {
-                    return (
-                      <div key="modified" style={{ width: w }} className="px-2 text-xs text-[var(--text-secondary)] truncate shrink-0">
-                        {formatDate(entry.modified)}
-                      </div>
-                    );
-                  }
+                      if (col.key === "modified") {
+                        return (
+                          <div key="modified" style={{ width: w }} className="px-2 text-xs text-[var(--text-secondary)] truncate shrink-0">
+                            {formatDate(entry.modified)}
+                          </div>
+                        );
+                      }
 
-                  if (col.key === "type") {
-                    return (
-                      <div key="type" style={{ width: w }} className="px-2 text-xs text-[var(--text-muted)] truncate shrink-0">
-                        {getFileTypeLabel(entry)}
-                      </div>
-                    );
-                  }
+                      if (col.key === "type") {
+                        return (
+                          <div key="type" style={{ width: w }} className="px-2 text-xs text-[var(--text-muted)] truncate shrink-0">
+                            {getFileTypeLabel(entry)}
+                          </div>
+                        );
+                      }
 
-                  if (col.key === "size") {
-                    return (
-                      <div key="size" style={{ width: w }} className="px-2 text-xs text-[var(--text-secondary)] text-right shrink-0">
-                        {entry.isDir ? "" : formatSize(entry.size)}
-                      </div>
-                    );
-                  }
+                      if (col.key === "size") {
+                        const sz = entry.isDir
+                          ? (showFolderSizes
+                            ? (folderSizeMap[entry.path] !== undefined ? formatSize(folderSizeMap[entry.path]) : "…")
+                            : "")
+                          : formatSize(entry.size);
+                        return (
+                          <div key="size" style={{ width: w }} className="px-2 text-xs text-[var(--text-secondary)] text-right shrink-0">
+                            {sz}
+                          </div>
+                        );
+                      }
 
-                  return null;
-                })}
-              </div>
-            );
-          })}
-        </div>
+                      if (col.key === "attributes") {
+                        const attrs = [
+                          entry.readonly ? "R" : "",
+                          entry.isHidden ? "H" : "",
+                          (entry as any).isSystem ? "S" : "",
+                        ].filter(Boolean).join(" ");
+                        return (
+                          <div key="attributes" style={{ width: w }} className="px-2 text-xs text-[var(--text-muted)] text-center shrink-0 font-mono tracking-wider">
+                            {attrs}
+                          </div>
+                        );
+                      }
+
+                      return null;
+                    })}
+                  </div>
+                );
+              })}
+            </div>
+          );
+        })()}
+
 
         {/* Lasso selection overlay */}
         {lasso && (() => {

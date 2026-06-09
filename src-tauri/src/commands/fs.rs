@@ -87,10 +87,15 @@ pub async fn get_file_info(path: String) -> Result<FileEntry, String> {
 
 #[command]
 pub async fn read_text_file(path: String, max_bytes: Option<u64>) -> Result<String, String> {
-    let limit = max_bytes.unwrap_or(1024 * 1024);
-    let content = tokio::fs::read(&path).await.map_err(|e| e.to_string())?;
-    let bytes = &content[..content.len().min(limit as usize)];
-    Ok(String::from_utf8_lossy(bytes).into_owned())
+    // BUG-048 FIX: read only up to `limit` bytes from disk instead of loading
+    // the entire file into memory and then slicing the buffer.
+    use tokio::io::AsyncReadExt;
+    let limit = max_bytes.unwrap_or(1024 * 1024) as usize;
+    let mut file = tokio::fs::File::open(&path).await.map_err(|e| e.to_string())?;
+    let mut buf = vec![0u8; limit];
+    let n = file.read(&mut buf).await.map_err(|e| e.to_string())?;
+    buf.truncate(n);
+    Ok(String::from_utf8_lossy(&buf).into_owned())
 }
 
 #[command]
@@ -298,8 +303,10 @@ pub async fn open_terminal_at(path: String) -> Result<(), String> {
             .spawn();
         if wt.is_ok() { return Ok(()); }
 
+        // BUG-015 FIX: escape single quotes to prevent PowerShell injection
+        let escaped = path.replace('\'', "''");
         std::process::Command::new("powershell")
-            .args(["-NoExit", "-Command", &format!("Set-Location '{}'", path)])
+            .args(["-NoExit", "-Command", &format!("Set-Location -LiteralPath '{}'", escaped)])
             .spawn()
             .map(|_| ())
             .map_err(|e| e.to_string())
@@ -396,10 +403,107 @@ fn get_volume_label(path: &str) -> Option<String> {
 }
 
 #[command]
-pub async fn get_recycle_bin_items() -> Result<Vec<FileEntry>, String> { Ok(vec![]) }
+pub async fn get_recycle_bin_items() -> Result<Vec<FileEntry>, String> {
+    tokio::task::spawn_blocking(|| {
+        #[cfg(windows)]
+        use std::os::windows::process::CommandExt;
+        // Use PowerShell to enumerate the Recycle Bin (Shell namespace 10)
+        let script = r#"
+$shell = New-Object -ComObject Shell.Application
+$bin = $shell.NameSpace(10)
+$items = $bin.Items()
+$result = @()
+foreach ($item in $items) {
+    $size = try { $item.Size } catch { 0 }
+    $modified = try { $item.ModifyDate.ToString('o') } catch { '' }
+    $result += [PSCustomObject]@{
+        name     = $item.Name
+        path     = $item.Path
+        size     = $size
+        modified = $modified
+        isDir    = $item.IsFolder
+    }
+}
+$result | ConvertTo-Json -Depth 2
+"#;
+        let mut cmd = std::process::Command::new("powershell");
+        cmd.args(["-NoProfile", "-NonInteractive", "-Command", script]);
+        #[cfg(windows)]
+        cmd.creation_flags(0x0800_0000);
+        let out = cmd.output().map_err(|e| e.to_string())?;
+        let stdout = String::from_utf8_lossy(&out.stdout).into_owned();
+        let trimmed = stdout.trim();
+        if trimmed.is_empty() {
+            return Ok(vec![]);
+        }
+        // Parse JSON array (or single object) into FileEntry structs
+        let val: serde_json::Value = serde_json::from_str(trimmed).unwrap_or(serde_json::Value::Array(vec![]));
+        let arr = match val {
+            serde_json::Value::Array(a) => a,
+            serde_json::Value::Object(_) => vec![val],
+            _ => vec![],
+        };
+        let entries = arr.iter().filter_map(|v| {
+            let name = v["name"].as_str().unwrap_or("").to_string();
+            let path = v["path"].as_str().unwrap_or("").to_string();
+            let size = v["size"].as_u64().unwrap_or(0);
+            let modified = v["modified"].as_str().filter(|s| !s.is_empty()).map(|s| s.to_string());
+            let is_dir = v["isDir"].as_bool().unwrap_or(false);
+            if path.is_empty() { return None; }
+            let ext = if !is_dir {
+                std::path::Path::new(&name).extension().and_then(|e| e.to_str()).map(|s| s.to_lowercase())
+            } else { None };
+            Some(crate::fs::FileEntry {
+                name,
+                path: path.clone(),
+                is_dir,
+                is_symlink: false,
+                is_hidden: false,
+                size,
+                modified,
+                created: None,
+                extension: ext,
+                readonly: false,
+                icon_type: if is_dir { "folder".to_string() } else { "file".to_string() },
+                ntfs_compressed: false,
+                ntfs_encrypted: false,
+                is_system: false,
+            })
+        }).collect();
+        Ok(entries)
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
 
 #[command]
-pub async fn restore_from_recycle_bin(_path: String) -> Result<(), String> { Ok(()) }
+pub async fn restore_from_recycle_bin(path: String) -> Result<(), String> {
+    tokio::task::spawn_blocking(move || {
+        #[cfg(windows)]
+        use std::os::windows::process::CommandExt;
+        let escaped = path.replace('\'', "''");
+        let script = format!(
+            r#"$shell = New-Object -ComObject Shell.Application
+$bin = $shell.NameSpace(10)
+foreach ($item in $bin.Items()) {{
+    if ($item.Path -eq '{}') {{ $item.InvokeVerb('restore'); break }}
+}}"#,
+            escaped
+        );
+        let mut cmd = std::process::Command::new("powershell");
+        cmd.args(["-NoProfile", "-NonInteractive", "-Command", &script]);
+        #[cfg(windows)]
+        cmd.creation_flags(0x0800_0000);
+        let out = cmd.output().map_err(|e| e.to_string())?;
+        if !out.status.success() {
+            Err(String::from_utf8_lossy(&out.stderr).to_string())
+        } else {
+            Ok(())
+        }
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
 
 #[command]
 pub async fn get_icon_data(path: String, is_dir: bool, size: Option<u32>) -> Result<String, String> {
@@ -1350,4 +1454,1033 @@ $shell.NameSpace(17).ParseName('{}:').InvokeVerb('format')"#,
     })
     .await
     .map_err(|e| e.to_string())?
+}
+
+// ─── File hash (MD5 / SHA-1 / SHA-256) ──────────────────────────────────────
+
+#[command]
+pub async fn get_file_hash(path: String, algorithm: String) -> Result<String, String> {
+    tokio::task::spawn_blocking(move || {
+        let algo = algorithm.to_lowercase();
+        match algo.as_str() {
+            "sha256" => {
+                use sha2::{Digest, Sha256};
+                use std::io::Read;
+                let mut file = std::fs::File::open(&path).map_err(|e| e.to_string())?;
+                let mut hasher = Sha256::new();
+                let mut buf = vec![0u8; 16 * 1024];
+                loop {
+                    let n = file.read(&mut buf).map_err(|e| e.to_string())?;
+                    if n == 0 { break; }
+                    hasher.update(&buf[..n]);
+                }
+                Ok(format!("{:x}", hasher.finalize()))
+            }
+            "sha1" => {
+                // Use PowerShell since sha1 crate is not in Cargo.toml
+                #[cfg(windows)]
+                use std::os::windows::process::CommandExt;
+                let escaped = path.replace('"', "\"\"");
+                let script = format!(
+                    "Get-FileHash -Algorithm SHA1 -LiteralPath \"{}\" | Select-Object -ExpandProperty Hash",
+                    escaped
+                );
+                let mut cmd = std::process::Command::new("powershell");
+                cmd.args(["-NoProfile", "-NonInteractive", "-Command", &script]);
+                #[cfg(windows)]
+                cmd.creation_flags(0x0800_0000);
+                let out = cmd.output().map_err(|e| e.to_string())?;
+                Ok(String::from_utf8_lossy(&out.stdout).trim().to_lowercase())
+            }
+            "md5" => {
+                // Use certutil since md5 crate is not in Cargo.toml
+                #[cfg(windows)]
+                use std::os::windows::process::CommandExt;
+                let mut cmd = std::process::Command::new("certutil");
+                cmd.args(["-hashfile", &path, "MD5"]);
+                #[cfg(windows)]
+                cmd.creation_flags(0x0800_0000);
+                let out = cmd.output().map_err(|e| e.to_string())?;
+                let stdout = String::from_utf8_lossy(&out.stdout).into_owned();
+                // certutil output: line 0 = header, line 1 = hash, line 2 = CertUtil: ...
+                let hash = stdout.lines().nth(1).unwrap_or("").trim().to_lowercase();
+                if hash.is_empty() {
+                    Err(format!("certutil failed: {}", String::from_utf8_lossy(&out.stderr)))
+                } else {
+                    Ok(hash)
+                }
+            }
+            _ => Err(format!("Unknown algorithm '{}'. Use md5, sha1, or sha256.", algorithm)),
+        }
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+
+// ─── Recycle Bin: empty ──────────────────────────────────────────────────────
+
+#[command]
+pub async fn empty_recycle_bin() -> Result<(), String> {
+    tokio::task::spawn_blocking(|| {
+        #[cfg(windows)]
+        {
+            use std::os::windows::process::CommandExt;
+            let mut cmd = std::process::Command::new("powershell");
+            cmd.args(["-NoProfile", "-NonInteractive", "-Command", "Clear-RecycleBin -Force -ErrorAction SilentlyContinue"]);
+            cmd.creation_flags(0x0800_0000);
+            let out = cmd.output().map_err(|e| e.to_string())?;
+            if !out.status.success() {
+                let stderr = String::from_utf8_lossy(&out.stderr).to_string();
+                if !stderr.is_empty() {
+                    return Err(stderr);
+                }
+            }
+            Ok(())
+        }
+        #[cfg(not(windows))]
+        Err("Empty recycle bin not supported on this platform".to_string())
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+
+// ─── Map network drive ───────────────────────────────────────────────────────
+
+#[command]
+pub async fn map_network_drive(letter: String, path: String, persistent: bool) -> Result<(), String> {
+    tokio::task::spawn_blocking(move || {
+        #[cfg(windows)]
+        use std::os::windows::process::CommandExt;
+        let drive = letter.trim_end_matches(':');
+        let persist = if persistent { "yes" } else { "no" };
+        let mut cmd = std::process::Command::new("cmd");
+        cmd.args(["/c", "net", "use", &format!("{}:", drive), &path, &format!("/persistent:{}", persist)]);
+        #[cfg(windows)]
+        cmd.creation_flags(0x0800_0000);
+        let out = cmd.output().map_err(|e| e.to_string())?;
+        if !out.status.success() {
+            Err(String::from_utf8_lossy(&out.stderr)
+                .chars().filter(|c| c.is_ascii()).collect::<String>()
+                .trim().to_string()
+                + &String::from_utf8_lossy(&out.stdout)
+                    .chars().filter(|c| c.is_ascii()).collect::<String>())
+        } else {
+            Ok(())
+        }
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+
+// ─── Disconnect network drive ─────────────────────────────────────────────────
+
+#[command]
+pub async fn disconnect_network_drive(letter: String) -> Result<(), String> {
+    tokio::task::spawn_blocking(move || {
+        #[cfg(windows)]
+        use std::os::windows::process::CommandExt;
+        let drive = letter.trim_end_matches(':');
+        let mut cmd = std::process::Command::new("cmd");
+        cmd.args(["/c", "net", "use", &format!("{}:", drive), "/delete"]);
+        #[cfg(windows)]
+        cmd.creation_flags(0x0800_0000);
+        let out = cmd.output().map_err(|e| e.to_string())?;
+        if !out.status.success() {
+            Err(String::from_utf8_lossy(&out.stderr)
+                .chars().filter(|c| c.is_ascii()).collect::<String>()
+                .trim().to_string())
+        } else {
+            Ok(())
+        }
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+
+// ─── Find duplicate files ─────────────────────────────────────────────────────
+
+#[command]
+pub async fn find_duplicate_files(path: String) -> Result<Vec<Vec<String>>, String> {
+    tokio::task::spawn_blocking(move || {
+        use sha2::{Digest, Sha256};
+        use std::io::Read;
+        use std::collections::HashMap;
+
+        let mut hash_map: HashMap<String, Vec<String>> = HashMap::new();
+
+        for entry in walkdir::WalkDir::new(&path).follow_links(false) {
+            let entry = match entry { Ok(e) => e, Err(_) => continue };
+            if !entry.file_type().is_file() { continue; }
+            let file_path = entry.path().to_string_lossy().into_owned();
+            let mut file = match std::fs::File::open(entry.path()) { Ok(f) => f, Err(_) => continue };
+            let mut hasher = Sha256::new();
+            let mut buf = vec![0u8; 16 * 1024];
+            loop {
+                let n = match file.read(&mut buf) { Ok(n) => n, Err(_) => break };
+                if n == 0 { break; }
+                hasher.update(&buf[..n]);
+            }
+            let hash = format!("{:x}", hasher.finalize());
+            hash_map.entry(hash).or_default().push(file_path);
+        }
+
+        let duplicates: Vec<Vec<String>> = hash_map.into_values()
+            .filter(|group| group.len() > 1)
+            .collect();
+
+        Ok(duplicates)
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+
+// ─── Send to Desktop as shortcut ─────────────────────────────────────────────
+
+#[command]
+pub async fn send_to_desktop_shortcut(path: String) -> Result<(), String> {
+    tokio::task::spawn_blocking(move || {
+        let desktop = dirs::desktop_dir()
+            .ok_or_else(|| "Cannot resolve Desktop directory".to_string())?;
+        let file_name = std::path::Path::new(&path)
+            .file_stem()
+            .and_then(|n| n.to_str())
+            .unwrap_or("Shortcut");
+        let shortcut_path = desktop.join(format!("{}.lnk", file_name))
+            .to_string_lossy()
+            .into_owned();
+
+        #[cfg(windows)]
+        use std::os::windows::process::CommandExt;
+        let script = format!(
+            "$s=(New-Object -COM WScript.Shell).CreateShortcut('{}'); $s.TargetPath='{}'; $s.Save()",
+            shortcut_path.replace('\'', "''"),
+            path.replace('\'', "''")
+        );
+        let mut cmd = std::process::Command::new("powershell");
+        cmd.args(["-NoProfile", "-NonInteractive", "-Command", &script]);
+        #[cfg(windows)]
+        cmd.creation_flags(0x0800_0000);
+        let out = cmd.output().map_err(|e| e.to_string())?;
+        if !out.status.success() {
+            Err(String::from_utf8_lossy(&out.stderr).to_string())
+        } else {
+            Ok(())
+        }
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+
+// ─── Send to Compressed (zip) folder ─────────────────────────────────────────
+
+#[command]
+pub async fn send_to_zip(paths: Vec<String>, dest_dir: String) -> Result<String, String> {
+    tokio::task::spawn_blocking(move || {
+        use std::io::Write;
+        // Derive zip name from first item or "archive"
+        let base_name = paths.first()
+            .and_then(|p| std::path::Path::new(p).file_stem())
+            .and_then(|n| n.to_str())
+            .unwrap_or("archive");
+        let output_path = std::path::Path::new(&dest_dir)
+            .join(format!("{}.zip", base_name))
+            .to_string_lossy()
+            .into_owned();
+
+        let file = std::fs::File::create(&output_path).map_err(|e| e.to_string())?;
+        let mut zip = zip::ZipWriter::new(file);
+        let options = zip::write::SimpleFileOptions::default()
+            .compression_method(zip::CompressionMethod::Deflated);
+
+        for src in &paths {
+            let src_path = Path::new(src);
+            if src_path.is_file() {
+                let name = src_path.file_name()
+                    .and_then(|n| n.to_str()).ok_or("Bad filename")?;
+                zip.start_file(name, options).map_err(|e| e.to_string())?;
+                let data = std::fs::read(src_path).map_err(|e| e.to_string())?;
+                zip.write_all(&data).map_err(|e| e.to_string())?;
+            } else if src_path.is_dir() {
+                let dir_name = src_path.file_name()
+                    .and_then(|n| n.to_str()).ok_or("Bad dir name")?;
+                add_dir_to_zip(&mut zip, src_path, dir_name, options)?;
+            }
+        }
+        zip.finish().map_err(|e| e.to_string())?;
+        Ok(output_path)
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+
+// ─── Get folder sizes asynchronously ─────────────────────────────────────────
+
+#[command]
+pub async fn get_folder_sizes(paths: Vec<String>) -> Result<Vec<(String, u64)>, String> {
+    let handles: Vec<_> = paths.into_iter().map(|p| {
+        tokio::task::spawn_blocking(move || {
+            let size: u64 = walkdir::WalkDir::new(&p)
+                .follow_links(false)
+                .into_iter()
+                .filter_map(|e| e.ok())
+                .filter(|e| e.file_type().is_file())
+                .map(|e| e.metadata().map(|m| m.len()).unwrap_or(0))
+                .sum();
+            (p, size)
+        })
+    }).collect();
+
+    let mut results = Vec::new();
+    for handle in handles {
+        let pair = handle.await.map_err(|e| e.to_string())?;
+        results.push(pair);
+    }
+    Ok(results)
+}
+
+// ─── Secure delete ────────────────────────────────────────────────────────────
+
+#[command]
+pub async fn secure_delete(paths: Vec<String>, passes: u32) -> Result<(), String> {
+    tokio::task::spawn_blocking(move || {
+        let n = if passes == 0 { 3 } else { passes };
+        for path in &paths {
+            let p = Path::new(path);
+            if p.is_dir() {
+                // Secure-delete all files recursively first
+                for entry in walkdir::WalkDir::new(p).into_iter().filter_map(|e| e.ok()) {
+                    if entry.file_type().is_file() {
+                        let _ = overwrite_file(entry.path(), n);
+                    }
+                }
+                std::fs::remove_dir_all(p).map_err(|e| e.to_string())?;
+            } else {
+                overwrite_file(p, n)?;
+                std::fs::remove_file(p).map_err(|e| e.to_string())?;
+            }
+        }
+        Ok(())
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+
+fn overwrite_file(p: &Path, passes: u32) -> Result<(), String> {
+    use rand::RngCore;
+    use std::io::{Seek, Write};
+    let size = std::fs::metadata(p).map(|m| m.len()).unwrap_or(0);
+    if size == 0 { return Ok(()); }
+    let mut file = std::fs::OpenOptions::new().write(true).open(p).map_err(|e| e.to_string())?;
+    let mut buf = vec![0u8; 65536];
+    for _ in 0..passes {
+        let mut remaining = size;
+        file.seek(std::io::SeekFrom::Start(0)).map_err(|e| e.to_string())?;
+        while remaining > 0 {
+            rand::thread_rng().fill_bytes(&mut buf);
+            let to_write = remaining.min(buf.len() as u64) as usize;
+            file.write_all(&buf[..to_write]).map_err(|e| e.to_string())?;
+            remaining -= to_write as u64;
+        }
+        file.flush().map_err(|e| e.to_string())?;
+    }
+    Ok(())
+}
+
+// ─── Detect suspicious files ─────────────────────────────────────────────────
+
+#[command]
+pub async fn detect_suspicious_files(paths: Vec<String>) -> Result<Vec<String>, String> {
+    tokio::task::spawn_blocking(move || {
+        let mut suspicious = Vec::new();
+        for path in &paths {
+            let p = Path::new(path);
+            if !p.is_file() { continue; }
+            let ext = p.extension().and_then(|e| e.to_str()).unwrap_or("").to_lowercase();
+            let mut buf = [0u8; 8];
+            let n = {
+                use std::io::Read;
+                match std::fs::File::open(p) {
+                    Ok(mut f) => f.read(&mut buf).unwrap_or(0),
+                    Err(_) => continue,
+                }
+            };
+            if n < 2 { continue; }
+            let is_exe = n >= 2 && buf[0] == 0x4D && buf[1] == 0x5A; // MZ
+            let is_pdf_magic = n >= 4 && &buf[..4] == b"%PDF";
+            let is_jpg_magic = n >= 3 && buf[0] == 0xFF && buf[1] == 0xD8 && buf[2] == 0xFF;
+            let is_png_magic = n >= 4 && buf[0] == 0x89 && buf[1] == 0x50 && buf[2] == 0x4E && buf[3] == 0x47;
+
+            let flag = match ext.as_str() {
+                "pdf" | "jpg" | "jpeg" | "png" | "doc" | "docx" if is_exe => true,
+                "pdf" if !is_pdf_magic => true,
+                "jpg" | "jpeg" if !is_jpg_magic => true,
+                "png" if !is_png_magic => true,
+                _ => false,
+            };
+            if flag {
+                suspicious.push(path.clone());
+            }
+        }
+        Ok(suspicious)
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+
+// ─── Find large files ─────────────────────────────────────────────────────────
+
+#[command]
+pub async fn find_large_files(path: String, limit: usize) -> Result<Vec<(String, u64)>, String> {
+    tokio::task::spawn_blocking(move || {
+        let mut files: Vec<(String, u64)> = walkdir::WalkDir::new(&path)
+            .follow_links(false)
+            .into_iter()
+            .filter_map(|e| e.ok())
+            .filter(|e| e.file_type().is_file())
+            .filter_map(|e| {
+                let size = e.metadata().ok()?.len();
+                Some((e.path().to_string_lossy().into_owned(), size))
+            })
+            .collect();
+        files.sort_by(|a, b| b.1.cmp(&a.1));
+        files.truncate(limit);
+        Ok(files)
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+
+// ─── Get file ACL (Windows) ──────────────────────────────────────────────────
+
+#[derive(serde::Serialize, serde::Deserialize, Clone)]
+pub struct AclEntry {
+    pub identity: String,
+    pub rights: String,
+    pub access_type: String,
+}
+
+#[command]
+pub async fn get_file_acl(path: String) -> Result<Vec<AclEntry>, String> {
+    tokio::task::spawn_blocking(move || {
+        #[cfg(windows)]
+        use std::os::windows::process::CommandExt;
+        let escaped = path.replace('\'', "''");
+        let script = format!(
+            "Get-Acl -LiteralPath '{}' | Select-Object -ExpandProperty Access | ConvertTo-Json -Depth 2",
+            escaped
+        );
+        let mut cmd = std::process::Command::new("powershell");
+        cmd.args(["-NoProfile", "-NonInteractive", "-Command", &script]);
+        #[cfg(windows)]
+        cmd.creation_flags(0x0800_0000);
+        let out = cmd.output().map_err(|e| e.to_string())?;
+        let stdout = String::from_utf8_lossy(&out.stdout).into_owned();
+        let trimmed = stdout.trim();
+        if trimmed.is_empty() { return Ok(vec![]); }
+        let val: serde_json::Value = serde_json::from_str(trimmed).unwrap_or(serde_json::Value::Array(vec![]));
+        let arr = match val {
+            serde_json::Value::Array(a) => a,
+            serde_json::Value::Object(_) => vec![val],
+            _ => return Ok(vec![]),
+        };
+        let entries = arr.iter().map(|v| AclEntry {
+            identity: v["IdentityReference"].as_str()
+                .or_else(|| v["IdentityReference"]["Value"].as_str())
+                .unwrap_or("").to_string(),
+            rights: v["FileSystemRights"].as_str()
+                .map(|s| s.to_string())
+                .or_else(|| v["FileSystemRights"].as_i64().map(|n| n.to_string()))
+                .unwrap_or_default(),
+            access_type: v["AccessControlType"].as_str().unwrap_or("").to_string(),
+        }).collect();
+        Ok(entries)
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+
+// ─── Encrypt file (AES-256-GCM + PBKDF2) ─────────────────────────────────────
+
+#[command]
+pub async fn encrypt_file(path: String, password: String, output_path: String) -> Result<(), String> {
+    tokio::task::spawn_blocking(move || {
+        use aes_gcm::{Aes256Gcm, Key, Nonce, aead::{Aead, KeyInit}};
+        use pbkdf2::pbkdf2_hmac;
+        use sha2::Sha256;
+        use rand::RngCore;
+
+        let plaintext = std::fs::read(&path).map_err(|e| e.to_string())?;
+
+        let mut salt = [0u8; 16];
+        let mut nonce_bytes = [0u8; 12];
+        rand::thread_rng().fill_bytes(&mut salt);
+        rand::thread_rng().fill_bytes(&mut nonce_bytes);
+
+        let mut key_bytes = [0u8; 32];
+        pbkdf2_hmac::<Sha256>(password.as_bytes(), &salt, 100_000, &mut key_bytes);
+
+        let key = Key::<Aes256Gcm>::from_slice(&key_bytes);
+        let cipher = Aes256Gcm::new(key);
+        let nonce = Nonce::from_slice(&nonce_bytes);
+
+        let ciphertext = cipher.encrypt(nonce, plaintext.as_ref())
+            .map_err(|e| format!("Encryption failed: {e}"))?;
+
+        let out = if output_path.is_empty() {
+            format!("{}.enc", path)
+        } else {
+            output_path
+        };
+
+        let mut data = Vec::with_capacity(16 + 12 + ciphertext.len());
+        data.extend_from_slice(&salt);
+        data.extend_from_slice(&nonce_bytes);
+        data.extend_from_slice(&ciphertext);
+
+        std::fs::write(&out, &data).map_err(|e| e.to_string())
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+
+// ─── Decrypt file (AES-256-GCM + PBKDF2) ─────────────────────────────────────
+
+#[command]
+pub async fn decrypt_file(path: String, password: String, output_path: String) -> Result<(), String> {
+    tokio::task::spawn_blocking(move || {
+        use aes_gcm::{Aes256Gcm, Key, Nonce, aead::{Aead, KeyInit}};
+        use pbkdf2::pbkdf2_hmac;
+        use sha2::Sha256;
+
+        let data = std::fs::read(&path).map_err(|e| e.to_string())?;
+        if data.len() < 28 {
+            return Err("File too short to be encrypted".to_string());
+        }
+        let salt = &data[..16];
+        let nonce_bytes = &data[16..28];
+        let ciphertext = &data[28..];
+
+        let mut key_bytes = [0u8; 32];
+        pbkdf2_hmac::<Sha256>(password.as_bytes(), salt, 100_000, &mut key_bytes);
+
+        let key = Key::<Aes256Gcm>::from_slice(&key_bytes);
+        let cipher = Aes256Gcm::new(key);
+        let nonce = Nonce::from_slice(nonce_bytes);
+
+        let plaintext = cipher.decrypt(nonce, ciphertext)
+            .map_err(|_| "Decryption failed: wrong password or corrupted file".to_string())?;
+
+        std::fs::write(&output_path, &plaintext).map_err(|e| e.to_string())
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+
+// ─── Activity log ─────────────────────────────────────────────────────────────
+
+#[derive(serde::Serialize, serde::Deserialize, Clone)]
+pub struct ActivityEntry {
+    pub id: i64,
+    pub timestamp: i64,
+    pub operation: String,
+    pub paths: Vec<String>,
+    pub destination: Option<String>,
+}
+
+#[command]
+pub async fn log_file_operation(
+    state: tauri::State<'_, std::sync::Mutex<crate::db::Database>>,
+    operation: String,
+    paths: Vec<String>,
+    destination: Option<String>,
+) -> Result<(), String> {
+    let db = state.lock().unwrap();
+    let conn = db.conn();
+    conn.execute_batch(
+        "CREATE TABLE IF NOT EXISTS activity_log (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            timestamp INTEGER NOT NULL,
+            operation TEXT NOT NULL,
+            paths TEXT NOT NULL,
+            destination TEXT
+        );"
+    ).map_err(|e| e.to_string())?;
+    let ts = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_secs() as i64;
+    let paths_json = serde_json::to_string(&paths).unwrap_or_default();
+    conn.execute(
+        "INSERT INTO activity_log (timestamp, operation, paths, destination) VALUES (?1, ?2, ?3, ?4)",
+        rusqlite::params![ts, operation, paths_json, destination],
+    ).map_err(|e| e.to_string())?;
+    Ok(())
+}
+
+#[command]
+pub async fn get_activity_log(
+    state: tauri::State<'_, std::sync::Mutex<crate::db::Database>>,
+    limit: i64,
+) -> Result<Vec<ActivityEntry>, String> {
+    let db = state.lock().unwrap();
+    let conn = db.conn();
+    conn.execute_batch(
+        "CREATE TABLE IF NOT EXISTS activity_log (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            timestamp INTEGER NOT NULL,
+            operation TEXT NOT NULL,
+            paths TEXT NOT NULL,
+            destination TEXT
+        );"
+    ).map_err(|e| e.to_string())?;
+    let mut stmt = conn.prepare(
+        "SELECT id, timestamp, operation, paths, destination FROM activity_log ORDER BY timestamp DESC LIMIT ?1"
+    ).map_err(|e| e.to_string())?;
+    let rows = stmt.query_map(rusqlite::params![limit], |row| {
+        let paths_str: String = row.get(3)?;
+        let paths: Vec<String> = serde_json::from_str(&paths_str).unwrap_or_default();
+        Ok(ActivityEntry {
+            id: row.get(0)?,
+            timestamp: row.get(1)?,
+            operation: row.get(2)?,
+            paths,
+            destination: row.get(4)?,
+        })
+    }).map_err(|e| e.to_string())?;
+    rows.collect::<Result<Vec<_>, _>>().map_err(|e| e.to_string())
+}
+
+// ─── Folder colors ────────────────────────────────────────────────────────────
+
+#[command]
+pub async fn get_folder_colors(
+    state: tauri::State<'_, std::sync::Mutex<crate::db::Database>>,
+) -> Result<Vec<(String, String)>, String> {
+    let db = state.lock().unwrap();
+    let conn = db.conn();
+    conn.execute_batch(
+        "CREATE TABLE IF NOT EXISTS folder_colors (path TEXT PRIMARY KEY, color TEXT NOT NULL);"
+    ).map_err(|e| e.to_string())?;
+    let mut stmt = conn.prepare("SELECT path, color FROM folder_colors")
+        .map_err(|e| e.to_string())?;
+    let rows = stmt.query_map([], |row| {
+        Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
+    }).map_err(|e| e.to_string())?;
+    rows.collect::<Result<Vec<_>, _>>().map_err(|e| e.to_string())
+}
+
+#[command]
+pub async fn set_folder_color(
+    state: tauri::State<'_, std::sync::Mutex<crate::db::Database>>,
+    path: String,
+    color: Option<String>,
+) -> Result<(), String> {
+    let db = state.lock().unwrap();
+    let conn = db.conn();
+    conn.execute_batch(
+        "CREATE TABLE IF NOT EXISTS folder_colors (path TEXT PRIMARY KEY, color TEXT NOT NULL);"
+    ).map_err(|e| e.to_string())?;
+    match color {
+        Some(c) => {
+            conn.execute(
+                "INSERT OR REPLACE INTO folder_colors (path, color) VALUES (?1, ?2)",
+                rusqlite::params![path, c],
+            ).map_err(|e| e.to_string())?;
+        }
+        None => {
+            conn.execute(
+                "DELETE FROM folder_colors WHERE path = ?1",
+                rusqlite::params![path],
+            ).map_err(|e| e.to_string())?;
+        }
+    }
+    Ok(())
+}
+
+// ─── Cloud sync status ────────────────────────────────────────────────────────
+
+#[command]
+pub async fn check_cloud_sync_status(path: String) -> Result<String, String> {
+    tokio::task::spawn_blocking(move || {
+        let p = std::path::Path::new(&path);
+        #[allow(unused_variables)]
+        let path_lower = path.to_lowercase().replace('/', "\\");
+
+        // Check OneDrive via registry
+        #[cfg(windows)]
+        {
+            use std::ffi::{OsStr, OsString};
+            use std::os::windows::ffi::{OsStrExt, OsStringExt};
+            unsafe {
+                let key_path: Vec<u16> = OsStr::new("Software\\Microsoft\\OneDrive").encode_wide().chain(std::iter::once(0)).collect();
+                let mut hkey: winapi::shared::minwindef::HKEY = std::ptr::null_mut();
+                if winapi::um::winreg::RegOpenKeyExW(
+                    winapi::um::winreg::HKEY_CURRENT_USER, key_path.as_ptr(), 0,
+                    winapi::um::winnt::KEY_READ, &mut hkey,
+                ) == 0 {
+                    let mut buf = vec![0u16; 512];
+                    let mut buf_size = (512u32 * 2);
+                    let val_name: Vec<u16> = "UserFolder\0".encode_utf16().collect();
+                    if winapi::um::winreg::RegQueryValueExW(
+                        hkey, val_name.as_ptr(), std::ptr::null_mut(), std::ptr::null_mut(),
+                        buf.as_mut_ptr() as *mut u8, &mut buf_size,
+                    ) == 0 {
+                        let end = buf.iter().position(|&c| c == 0).unwrap_or(buf.len());
+                        let od_path = OsString::from_wide(&buf[..end]).to_string_lossy().to_lowercase().replace('/', "\\");
+                        if !od_path.is_empty() && path_lower.starts_with(&od_path) {
+                            winapi::um::winreg::RegCloseKey(hkey);
+                            return Ok("onedrive".to_string());
+                        }
+                    }
+                    winapi::um::winreg::RegCloseKey(hkey);
+                }
+            }
+        }
+
+        // Fallback: check common env-var paths
+        if let Ok(profile) = std::env::var("USERPROFILE") {
+            let od = std::path::Path::new(&profile).join("OneDrive");
+            if p.starts_with(&od) {
+                return Ok("onedrive".to_string());
+            }
+        }
+
+        // Check Dropbox via info.json
+        if let Ok(appdata) = std::env::var("APPDATA") {
+            let info = std::path::Path::new(&appdata).join("Dropbox").join("info.json");
+            if info.exists() {
+                if let Ok(contents) = std::fs::read_to_string(&info) {
+                    if let Ok(val) = serde_json::from_str::<serde_json::Value>(&contents) {
+                        let db_path = val["personal"]["path"].as_str()
+                            .or_else(|| val["business"]["path"].as_str())
+                            .unwrap_or("");
+                        if !db_path.is_empty() && p.starts_with(db_path) {
+                            return Ok("dropbox".to_string());
+                        }
+                    }
+                }
+            }
+        }
+
+        // Check Google Drive via registry
+        #[cfg(windows)]
+        {
+            use std::ffi::{OsStr, OsString};
+            use std::os::windows::ffi::{OsStrExt, OsStringExt};
+            unsafe {
+                let key_path: Vec<u16> = OsStr::new("Software\\Google\\Drive").encode_wide().chain(std::iter::once(0)).collect();
+                let mut hkey: winapi::shared::minwindef::HKEY = std::ptr::null_mut();
+                if winapi::um::winreg::RegOpenKeyExW(
+                    winapi::um::winreg::HKEY_CURRENT_USER, key_path.as_ptr(), 0,
+                    winapi::um::winnt::KEY_READ, &mut hkey,
+                ) == 0 {
+                    let mut buf = vec![0u16; 512];
+                    let mut buf_size = (512u32 * 2);
+                    let val_name: Vec<u16> = "installLocation\0".encode_utf16().collect();
+                    if winapi::um::winreg::RegQueryValueExW(
+                        hkey, val_name.as_ptr(), std::ptr::null_mut(), std::ptr::null_mut(),
+                        buf.as_mut_ptr() as *mut u8, &mut buf_size,
+                    ) == 0 {
+                        let end = buf.iter().position(|&c| c == 0).unwrap_or(buf.len());
+                        let gd_path = OsString::from_wide(&buf[..end]).to_string_lossy().to_lowercase().replace('/', "\\");
+                        if !gd_path.is_empty() && path_lower.starts_with(&gd_path) {
+                            winapi::um::winreg::RegCloseKey(hkey);
+                            return Ok("googledrive".to_string());
+                        }
+                    }
+                    winapi::um::winreg::RegCloseKey(hkey);
+                }
+            }
+        }
+
+        Ok("none".to_string())
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+
+// ─── SQLite FTS5 indexed search ───────────────────────────────────────────────
+
+fn ensure_file_index(conn: &rusqlite::Connection) -> Result<(), String> {
+    conn.execute_batch(
+        "CREATE VIRTUAL TABLE IF NOT EXISTS file_index USING fts5(
+            name,
+            path UNINDEXED,
+            extension UNINDEXED,
+            size UNINDEXED,
+            modified UNINDEXED
+        );"
+    ).map_err(|e| e.to_string())
+}
+
+#[command]
+pub async fn search_files_indexed(
+    state: tauri::State<'_, std::sync::Mutex<crate::db::Database>>,
+    query: String,
+    limit: i64,
+) -> Result<Vec<crate::search::SearchResult>, String> {
+    let db = state.lock().unwrap();
+    let conn = db.conn();
+    ensure_file_index(conn)?;
+    let mut stmt = conn.prepare(
+        "SELECT path, name, extension, size, modified FROM file_index WHERE name MATCH ?1 ORDER BY rank LIMIT ?2"
+    ).map_err(|e| e.to_string())?;
+    let rows = stmt.query_map(rusqlite::params![query, limit], |row| {
+        let path: String = row.get(0)?;
+        let name: String = row.get(1)?;
+        let size: u64 = row.get::<_, i64>(3).map(|v| v as u64).unwrap_or(0);
+        let modified: Option<String> = row.get(4)?;
+        Ok(crate::search::SearchResult {
+            path,
+            name,
+            is_dir: false,
+            score: 0,
+            size,
+            modified,
+        })
+    }).map_err(|e| e.to_string())?;
+    rows.collect::<Result<Vec<_>, _>>().map_err(|e| e.to_string())
+}
+
+#[command]
+pub async fn index_path_to_db(
+    state: tauri::State<'_, std::sync::Mutex<crate::db::Database>>,
+    path: String,
+) -> Result<u64, String> {
+    let db = state.lock().unwrap();
+    let conn = db.conn();
+    ensure_file_index(conn)?;
+    // Clear stale entries for this root
+    conn.execute("DELETE FROM file_index WHERE path LIKE ?1", rusqlite::params![format!("{}%", path)])
+        .map_err(|e| e.to_string())?;
+
+    let mut count = 0u64;
+    for entry in walkdir::WalkDir::new(&path).follow_links(false).into_iter().filter_map(|e| e.ok()) {
+        if !entry.file_type().is_file() { continue; }
+        let ep = entry.path();
+        let name = ep.file_name().and_then(|n| n.to_str()).unwrap_or("").to_string();
+        let full_path = ep.to_string_lossy().into_owned();
+        let ext = ep.extension().and_then(|e| e.to_str()).unwrap_or("").to_string();
+        let (size, modified) = entry.metadata().map(|m| {
+            let s = m.len() as i64;
+            let mo = m.modified().ok()
+                .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
+                .map(|d| d.as_secs().to_string());
+            (s, mo)
+        }).unwrap_or((0, None));
+
+        let _ = conn.execute(
+            "INSERT INTO file_index (name, path, extension, size, modified) VALUES (?1, ?2, ?3, ?4, ?5)",
+            rusqlite::params![name, full_path, ext, size, modified],
+        );
+        count += 1;
+    }
+    Ok(count)
+}
+
+// ─── WSL distros ──────────────────────────────────────────────────────────────
+
+#[derive(serde::Serialize, serde::Deserialize, Clone)]
+pub struct WslDistro {
+    pub name: String,
+    pub home_path: String,
+}
+
+// BUG-053 FIX: only run on Windows — wsl.exe doesn't exist on other platforms
+#[command]
+pub async fn get_wsl_distros() -> Result<Vec<WslDistro>, String> {
+    #[cfg(not(windows))]
+    return Ok(Vec::new());
+
+    #[cfg(windows)]
+    tokio::task::spawn_blocking(|| {
+        use std::os::windows::process::CommandExt;
+        let mut cmd = std::process::Command::new("wsl.exe");
+        cmd.args(["--list", "--quiet"]);
+        #[cfg(windows)]
+        { cmd.creation_flags(0x0800_0000); }
+        let out = cmd.output().map_err(|e| e.to_string())?;
+        // WSL --list --quiet always outputs UTF-16 LE (with or without BOM)
+        let raw = out.stdout;
+        // Strip BOM bytes if present to get the data slice
+        let slice = if raw.len() >= 2 && raw[0] == 0xFF && raw[1] == 0xFE {
+            &raw[2..]
+        } else {
+            &raw[..]
+        };
+        // Detect UTF-16 LE: length is even and all odd-index bytes are 0x00
+        let is_utf16 = slice.len() >= 2
+            && slice.len() % 2 == 0
+            && slice.iter().skip(1).step_by(2).all(|&b| b == 0);
+        let text = if is_utf16 {
+            let words: Vec<u16> = slice.chunks_exact(2)
+                .map(|c| u16::from_le_bytes([c[0], c[1]]))
+                .collect();
+            String::from_utf16_lossy(&words)
+        } else {
+            String::from_utf8_lossy(&raw).into_owned()
+        };
+
+        let distros: Vec<WslDistro> = text.lines()
+            .map(|l| l.trim().trim_start_matches('\u{feff}'))
+            .filter(|l| !l.is_empty())
+            .map(|name| {
+                // Strip "(Default)" suffix if present
+                let name = name.split_whitespace().next().unwrap_or(name).to_string();
+                let home_path = get_wsl_home(&name);
+                WslDistro { name, home_path }
+            })
+            .collect();
+        Ok(distros)
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+
+fn get_wsl_home(distro: &str) -> String {
+    #[cfg(windows)]
+    use std::os::windows::process::CommandExt;
+    let mut cmd = std::process::Command::new("wsl.exe");
+    cmd.args(["-d", distro, "--", "sh", "-c", "echo $HOME"]);
+    #[cfg(windows)]
+    { cmd.creation_flags(0x0800_0000); }
+    let Ok(out) = cmd.output() else { return format!("\\\\wsl$\\{}", distro) };
+    let home = String::from_utf8_lossy(&out.stdout).trim().to_string();
+    if home.is_empty() {
+        return format!("\\\\wsl$\\{}", distro);
+    }
+    // Convert /home/user -> \\wsl$\Distro\home\user
+    let wsl_rel = home.trim_start_matches('/').replace('/', "\\");
+    format!("\\\\wsl$\\{}\\{}", distro, wsl_rel)
+}
+
+// ─── Open WSL terminal ────────────────────────────────────────────────────────
+
+#[command]
+pub async fn open_wsl_terminal(distro: String, path: String) -> Result<(), String> {
+    tokio::task::spawn_blocking(move || {
+        // Convert Windows path to WSL path: C:\foo\bar -> /mnt/c/foo/bar
+        let wsl_path = windows_to_wsl_path(&path);
+        let bash_cmd = format!("cd '{}' && bash", wsl_path.replace('\'', "'\\''"));
+        // Try Windows Terminal first
+        #[cfg(windows)]
+        {
+            use std::os::windows::process::CommandExt;
+            let wt = std::process::Command::new("wt.exe")
+                .args(["wsl.exe", "-d", &distro, "--", "bash", "-c", &bash_cmd])
+                .creation_flags(0x0800_0000)
+                .spawn();
+            if wt.is_ok() { return Ok(()); }
+            return std::process::Command::new("wsl.exe")
+                .args(["-d", &distro])
+                .creation_flags(0x0800_0000)
+                .spawn()
+                .map(|_| ())
+                .map_err(|e| e.to_string());
+        }
+        #[cfg(not(windows))]
+        {
+            let _ = bash_cmd;
+            std::process::Command::new("wsl.exe")
+                .args(["-d", &distro])
+                .spawn()
+                .map(|_| ())
+                .map_err(|e| e.to_string())
+        }
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+
+fn windows_to_wsl_path(path: &str) -> String {
+    let p = path.replace('\\', "/");
+    if p.len() >= 2 {
+        let drive = p.chars().next().unwrap_or('c').to_lowercase().next().unwrap_or('c');
+        if p.chars().nth(1) == Some(':') {
+            return format!("/mnt/{}{}", drive, &p[2..]);
+        }
+    }
+    p
+}
+
+// ─── Copy items with progress events ─────────────────────────────────────────
+
+#[command]
+pub async fn copy_items_with_progress(
+    app: tauri::AppHandle,
+    sources: Vec<String>,
+    dest_dir: String,
+    operation_id: String,
+) -> Result<(), String> {
+    use tauri::Emitter;
+    tokio::task::spawn_blocking(move || {
+        let files_total = sources.len();
+        for (files_done, src) in sources.iter().enumerate() {
+            let src_path = Path::new(src);
+            let file_name = match src_path.file_name() {
+                Some(n) => n,
+                None => continue,
+            };
+            let dest = Path::new(&dest_dir).join(file_name);
+            let result = if src_path.is_dir() {
+                copy_dir_with_progress(src_path, &dest, &app, src, &operation_id, files_done, files_total)
+            } else {
+                copy_single_with_progress(src_path, &dest, &app, src, &operation_id, files_done, files_total)
+            };
+            if let Err(e) = result {
+                let _ = app.emit("copy-error", serde_json::json!({ "operation_id": operation_id, "error": e }));
+                return Err(e);
+            }
+        }
+        let _ = app.emit("copy-done", serde_json::json!({ "operation_id": operation_id }));
+        Ok(())
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+
+fn copy_single_with_progress(
+    src: &Path, dst: &Path, app: &tauri::AppHandle,
+    src_str: &str, op_id: &str, files_done: usize, files_total: usize,
+) -> Result<(), String> {
+    use tauri::Emitter;
+    use std::io::{Read, Write};
+    let meta = std::fs::metadata(src).map_err(|e| e.to_string())?;
+    let bytes_total = meta.len();
+    let mut reader = std::fs::File::open(src).map_err(|e| e.to_string())?;
+    let mut writer = std::fs::File::create(dst).map_err(|e| e.to_string())?;
+    let mut buf = vec![0u8; 65536];
+    let mut bytes_done = 0u64;
+    loop {
+        let n = reader.read(&mut buf).map_err(|e| e.to_string())?;
+        if n == 0 { break; }
+        writer.write_all(&buf[..n]).map_err(|e| e.to_string())?;
+        bytes_done += n as u64;
+        let _ = app.emit("copy-progress", serde_json::json!({
+            "operation_id": op_id,
+            "file": src_str,
+            "bytes_done": bytes_done,
+            "bytes_total": bytes_total,
+            "files_done": files_done,
+            "files_total": files_total,
+        }));
+    }
+    Ok(())
+}
+
+fn copy_dir_with_progress(
+    src: &Path, dst: &Path, app: &tauri::AppHandle,
+    src_str: &str, op_id: &str, files_done: usize, files_total: usize,
+) -> Result<(), String> {
+    std::fs::create_dir_all(dst).map_err(|e| e.to_string())?;
+    for entry in std::fs::read_dir(src).map_err(|e| e.to_string())?.flatten() {
+        let dst_entry = dst.join(entry.file_name());
+        let ep = entry.path();
+        if ep.is_dir() {
+            copy_dir_with_progress(&ep, &dst_entry, app, src_str, op_id, files_done, files_total)?;
+        } else {
+            copy_single_with_progress(&ep, &dst_entry, app, src_str, op_id, files_done, files_total)?;
+        }
+    }
+    Ok(())
 }

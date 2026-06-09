@@ -1,11 +1,14 @@
 import { useState, useCallback, useEffect, useMemo, useRef } from "react";
 import { Loader2, AlertCircle, Search, X, ChevronLeft, ChevronRight, ChevronUp } from "lucide-react";
-import { PaneSidebar } from "../sidebar/PaneSidebar";
+import { Sidebar } from "../sidebar/Sidebar";
+import { HomePane } from "../home/HomePane";
+import { RecycleBinPane } from "../home/RecycleBinPane";
 import { listen } from "@tauri-apps/api/event";
 import { useStore } from "../../store";
 import { fs } from "../../lib/invoke";
 import { DetailsView } from "./DetailsView";
 import { GridView } from "./GridView";
+import { MillerView } from "./MillerView";
 import { ContextMenu } from "./ContextMenu";
 import { BreadcrumbBar } from "../toolbar/BreadcrumbBar";
 import type { FileEntry, ContextMenuAction } from "../../lib/types";
@@ -21,6 +24,8 @@ export function FilePane({ paneId, showNavBar }: Props) {
     openQuickLook, activePaneId, setActivePane, toggleBulkRename, openProperties,
     pushUndo, previewOpen, closePreview, openPalette,
     navigateBack, navigateForward, navigateUp,
+    openFileVault, openPermissions,
+    folderColors, setFolderColor,
   } = useStore();
   const pane = panes[paneId];
   const [ctxMenu, setCtxMenu] = useState<CtxMenuState | null>(null);
@@ -43,8 +48,13 @@ export function FilePane({ paneId, showNavBar }: Props) {
   // File watcher — auto-refresh on changes
   useEffect(() => {
     if (!pane?.path) return;
+    const panePath = pane.path.replace(/[\\/]+$/, "").toLowerCase();
     const unlisten = listen<any>("fs-change", (event) => {
-      if (event.payload?.path === pane.path) refresh(paneId);
+      // BUG-008 FIX: match if the changed path IS the pane dir or is a child of it
+      const evPath = (event.payload?.path ?? "").replace(/[\\/]+$/, "").toLowerCase();
+      if (evPath === panePath || evPath.startsWith(panePath + "\\") || evPath.startsWith(panePath + "/")) {
+        refresh(paneId);
+      }
     });
     return () => { unlisten.then((fn) => fn()); };
   }, [pane?.path, paneId]);
@@ -139,9 +149,7 @@ export function FilePane({ paneId, showNavBar }: Props) {
     return () => window.removeEventListener("nova:focussearch", handler);
   }, [paneId]);
 
-  const handleRenameCommit = useCallback(async (_entry: FileEntry, _newName: string) => {
-    // refresh is called inside DetailsView
-  }, []);
+  // BUG-052 FIX: removed dead handleRenameCommit no-op (refresh is handled inside DetailsView)
 
   // Drag & drop — drop onto this pane
   const handleDragOver = (e: React.DragEvent) => {
@@ -158,12 +166,23 @@ export function FilePane({ paneId, showNavBar }: Props) {
     if (!raw || !pane) return;
     try {
       const paths: string[] = JSON.parse(raw);
-      if (e.ctrlKey) {
+      const mode = e.ctrlKey ? "copy" : "move";
+
+      // BUG-012 FIX: check for conflicts before move/copy, same as pasteClipboard
+      const conflicts = await fs.checkConflicts(paths, pane.path).catch(() => []);
+      if (conflicts.length > 0) {
+        window.dispatchEvent(new CustomEvent("nova:conflict", {
+          detail: { conflicts, paths, destDir: pane.path, mode, destPaneId: paneId }
+        }));
+        return;
+      }
+
+      if (mode === "copy") {
         await fs.copyItems(paths, pane.path);
-        pushUndo({ id: Math.random().toString(36).slice(2), kind: "copy", sources: paths, dest: pane.path, timestamp: Date.now() });
+        pushUndo({ id: crypto.randomUUID(), kind: "copy", sources: paths, dest: pane.path, timestamp: Date.now() });
       } else {
         await fs.moveItems(paths, pane.path);
-        pushUndo({ id: Math.random().toString(36).slice(2), kind: "move", sources: paths, dest: pane.path, timestamp: Date.now() });
+        pushUndo({ id: crypto.randomUUID(), kind: "move", sources: paths, dest: pane.path, timestamp: Date.now() });
       }
       refresh(paneId);
     } catch (err) { console.error("Drop failed:", err); }
@@ -435,6 +454,53 @@ export function FilePane({ paneId, showNavBar }: Props) {
       action: () => navigator.clipboard.writeText(targets.join("\n")),
     });
 
+    // Send To submenu
+    actions.push({
+      id: "send-to-desktop", label: "Send to → Desktop (shortcut)",
+      action: () => fs.sendToDesktopShortcut(entry.path).catch((e) => console.error(e)),
+    });
+    actions.push({
+      id: "send-to-zip", label: "Send to → Compressed (zipped) folder",
+      action: async () => {
+        const destDir = pane?.path ?? "";
+        await fs.sendToZip(targets, destDir).catch((e) => console.error(e));
+        refresh(paneId);
+      },
+    });
+
+    // Copy hash
+    if (!entry.isDir) {
+      actions.push(
+        {
+          id: "hash-md5", label: "Copy hash → MD5",
+          action: async () => {
+            try {
+              const hash = await fs.getFileHash(entry.path, "MD5");
+              navigator.clipboard.writeText(hash);
+            } catch (e) { console.error(e); }
+          },
+        },
+        {
+          id: "hash-sha1", label: "Copy hash → SHA-1",
+          action: async () => {
+            try {
+              const hash = await fs.getFileHash(entry.path, "SHA1");
+              navigator.clipboard.writeText(hash);
+            } catch (e) { console.error(e); }
+          },
+        },
+        {
+          id: "hash-sha256", label: "Copy hash → SHA-256",
+          action: async () => {
+            try {
+              const hash = await fs.getFileHash(entry.path, "SHA256");
+              navigator.clipboard.writeText(hash);
+            } catch (e) { console.error(e); }
+          },
+        },
+      );
+    }
+
     // Compress to ZIP
     actions.push({
       id: "compress-zip", label: `Compress ${targets.length > 1 ? targets.length + " items" : '"' + entry.name + '"'} to ZIP`,
@@ -513,12 +579,61 @@ export function FilePane({ paneId, showNavBar }: Props) {
           }
         },
       },
+      {
+        id: "secure-delete", label: "Secure delete (overwrite)", danger: true,
+        action: async () => {
+          if (confirm(`Securely overwrite and delete ${targets.length} item(s)? This CANNOT be recovered.`)) {
+            await fs.secureDelete(targets, 3).catch((e) => console.error(e));
+            refresh(paneId);
+          }
+        },
+      },
     );
+
+    // File vault (encrypt/decrypt)
+    if (!entry.isDir) {
+      actions.push({ id: "sep-vault", label: "", separator: true, action: () => {} });
+      actions.push({
+        id: "file-vault", label: entry.extension === "enc" ? "Decrypt file (File Vault)" : "Encrypt file (File Vault)",
+        action: () => openFileVault(entry.path),
+      });
+    }
+
+    // Permissions
+    actions.push({
+      id: "permissions", label: "View permissions (ACL)",
+      action: () => openPermissions(entry.path),
+    });
+
+    // Folder color coding
+    if (entry.isDir) {
+      const COLORS = ["#f4b942", "#e85d4a", "#4a9ef4", "#4ae87a", "#b44af4", "#f44ab4", "#f4944a", null];
+      actions.push({ id: "sep-color", label: "", separator: true, action: () => {} });
+      COLORS.forEach((c, i) => {
+        if (c === null) {
+          actions.push({
+            id: "folder-color-clear",
+            label: "Folder color → Clear",
+            action: () => setFolderColor(entry.path, null),
+          });
+        } else {
+          actions.push({
+            id: `folder-color-${i}`,
+            label: `Folder color → ${["Yellow","Red","Blue","Green","Purple","Pink","Orange"][i]}`,
+            action: () => setFolderColor(entry.path, c),
+          });
+        }
+      });
+    }
 
     return actions;
   };
 
   if (!pane) return null;
+
+  // Special virtual paths
+  if (pane.path === "::home") return <HomePane paneId={paneId} />;
+  if (pane.path === "::recycle") return <RecycleBinPane paneId={paneId} />;
 
   return (
     <div
@@ -608,12 +723,17 @@ export function FilePane({ paneId, showNavBar }: Props) {
 
       {/* Body: sidebar (split mode only) + content column */}
       <div className="flex flex-1 overflow-hidden min-h-0">
-        {showNavBar && (
-          <PaneSidebar
-            paneId={paneId}
-            collapsed={paneSidebarCollapsed}
-            onToggle={() => setPaneSidebarCollapsed((v) => !v)}
-          />
+        {showNavBar && !paneSidebarCollapsed && (
+          <Sidebar paneId={paneId} width={200} onCollapse={() => setPaneSidebarCollapsed(true)} />
+        )}
+        {showNavBar && paneSidebarCollapsed && (
+          <button
+            onClick={() => setPaneSidebarCollapsed(false)}
+            title="Expand sidebar"
+            className="flex items-center justify-center w-7 border-r border-[var(--border)] bg-[var(--bg-surface)] text-[var(--text-muted)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-hover)] transition-colors shrink-0"
+          >
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M9 3v18"/></svg>
+          </button>
         )}
 
         {/* Content column */}
@@ -746,17 +866,18 @@ export function FilePane({ paneId, showNavBar }: Props) {
       )}
 
       {/* File list */}
-      {!pane.error && (displayEntries.length > 0 || newFolderName !== null) && (
+      {!pane.error && (displayEntries.length > 0 || newFolderName !== null || pane.viewMode === "columns") && (
         <div className="flex-1 overflow-hidden" onClick={(e) => e.stopPropagation()}>
           {pane.viewMode === "grid" ? (
             <GridView paneId={paneId} entries={displayEntries} onOpen={handleOpen} onContextMenu={handleContextMenu} />
+          ) : pane.viewMode === "columns" ? (
+            <MillerView paneId={paneId} onOpen={handleOpen} onContextMenu={handleContextMenu} />
           ) : (
             <DetailsView
               paneId={paneId}
               entries={displayEntries}
               onOpen={handleOpen}
               onContextMenu={handleContextMenu}
-              onRenameCommit={handleRenameCommit}
             />
           )}
         </div>
